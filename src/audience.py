@@ -35,14 +35,31 @@ _DEVICE_SCRIPT = """
 
 
 def get_device_id() -> str:
-    """Lấy/cấp mã thiết bị từ localStorage (giữ ổn định khi quét QR nhiều lần)."""
-    if "device_id" in st.session_state and st.session_state["device_id"]:
-        return st.session_state["device_id"]
-    device = components.html(_DEVICE_SCRIPT, height=0)
-    if isinstance(device, str) and device:
-        st.session_state["device_id"] = device
-        return device
-    return st.session_state.get("device_id")
+    """Lấy/cấp mã thiết bị.
+
+    Ưu tiên localStorage (giữ ổn định khi quét QR nhiều lần trên cùng thiết bị);
+    nếu chưa có thì cấp id tạm (Python UUID) để biểu mẫu nhập tên luôn hiển thị.
+    """
+    import uuid
+
+    # Đã xác định id từ localStorage
+    if st.session_state.get("_device_confirmed"):
+        return st.session_state["_device_confirmed"]
+
+    # Id tạm theo phiên (đảm bảo luôn có id, không bị treo)
+    if "device_id" not in st.session_state:
+        st.session_state["device_id"] = "dev-" + uuid.uuid4().hex[:16]
+    tmp = st.session_state["device_id"]
+
+    # Thử đọc localStorage (best-effort)
+    try:
+        stored = components.html(_DEVICE_SCRIPT, height=0)
+    except Exception:
+        stored = None
+    if isinstance(stored, str) and stored:
+        st.session_state["_device_confirmed"] = stored
+        return stored
+    return tmp
 
 
 def render_play_view() -> None:

@@ -378,11 +378,53 @@ STEP_RENDERERS = {
 # ---------------------------------------------------------------------------
 # Trang người trình bày (wizard)
 # ---------------------------------------------------------------------------
+def _nav_targets(stage: str, step_idx: int) -> tuple:
+    """Trả về (trạng thái trước, trạng thái sau) dạng (stage, step_idx) hoặc None."""
+    if stage == "upload":
+        return ("landing", 0), ("check", 0)
+    if stage == "check":
+        return ("upload", 0), ("steps", 0)
+    if stage == "steps":
+        prev_state = ("check", 0) if step_idx == 0 else ("steps", step_idx - 1)
+        next_state = ("done", 0) if step_idx == len(STEPS) - 1 else ("steps", step_idx + 1)
+        return prev_state, next_state
+    if stage == "done":
+        return ("steps", len(STEPS) - 1), None
+    return None, None
+
+
+def render_nav_bar(stage: str, step_idx: int) -> None:
+    """Thanh điều hướng: Home / Lùi lại / Tiếp tục."""
+    if stage == "landing":
+        return
+    prev_state, next_state = _nav_targets(stage, step_idx)
+
+    def go(s: str, si: int) -> None:
+        st.session_state["stage"] = s
+        st.session_state["step_idx"] = si
+        st.rerun()
+
+    col_home, col_back, col_next, col_spacer = st.columns([1, 1, 1, 5])
+    if col_home.button("🏠 Home", key="nav_home", use_container_width=True):
+        go("landing", 0)
+    if prev_state and col_back.button("⬅️ Lùi lại", key="nav_back", use_container_width=True):
+        go(*prev_state)
+    if next_state and col_next.button("Tiếp tục ➡️", key="nav_next", use_container_width=True):
+        go(*next_state)
+    st.markdown("---")
+
+
 def presenter_view() -> None:
     room_id = get_room_id()
     ai_cfg = ai.get_config()
     stage = st.session_state.get("stage", "landing")
     step_idx = st.session_state.get("step_idx", 0)
+
+    # Đảm bảo đã tải dữ liệu trước khi vào các bước phân tích
+    if stage in ("check", "steps", "done") and st.session_state.get("df") is None:
+        stage = "upload"
+        st.session_state["stage"] = "upload"
+        st.session_state["step_idx"] = 0
 
     with st.sidebar:
         st.markdown("### 🎮 Bảng điều khiển")
@@ -411,6 +453,9 @@ def presenter_view() -> None:
             pub_url = st.text_input("URL công khai cho người tham gia", value=origin)
             if pub_url and pub_url != origin:
                 st.session_state["origin"] = pub_url.rstrip("/")
+
+    # Thanh điều hướng (Home / Lùi / Tiếp)
+    render_nav_bar(stage, step_idx)
 
     if stage == "landing":
         theme.hero()
@@ -575,19 +620,7 @@ def presenter_view() -> None:
             ):
                 st.session_state["step_idx"] = i
                 st.rerun()
-        st.caption(f"Phần hiện tại: **{step_no}. {step_label}**")
-
-        c_left, c_right = st.columns(2)
-        if step_idx > 0 and c_left.button("⬅️ Quay lại", key="prev_btn", use_container_width=True):
-            st.session_state["step_idx"] = step_idx - 1
-            st.rerun()
-        if step_idx < len(STEPS) - 1 and c_right.button("Tiếp tục ➡️", key="next_btn", use_container_width=True):
-            st.session_state["step_idx"] = step_idx + 1
-            st.rerun()
-        if step_idx == len(STEPS) - 1:
-            if c_right.button("✅ Hoàn tất", key="finish_btn", use_container_width=True):
-                st.session_state["stage"] = "done"
-                st.rerun()
+        st.caption(f"Phần hiện tại: **{step_no}. {step_label}** · Dùng nút Lùi/Tiếp ở trên để qua lại")
         return
 
     if stage == "done":

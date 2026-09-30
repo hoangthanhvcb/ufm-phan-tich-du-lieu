@@ -19,6 +19,8 @@ GRAY = "#5B6B7C"
 
 UFM_CSS = f"""
 <style>
+@import url('https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@500;600;700;800;900&display=swap');
+
 :root {{
   --ufm-blue: {BLUE};
   --ufm-blue-dark: {BLUE_DARK};
@@ -112,16 +114,22 @@ h1, h2, h3 {{
 }}
 .ufm-hero h1 {{
   color: #ffffff;
+  font-family: 'Be Vietnam Pro', 'Segoe UI', sans-serif;
   font-size: 2.7rem;
   font-weight: 800;
   margin: 0.2rem 0 0.6rem 0;
-  letter-spacing: -0.02em;
-  line-height: 1.25;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
 }}
 .ufm-hero h1 .highlight {{
   display: block;
-  color: #ffd166;
-  text-shadow: 0 2px 14px rgba(255, 209, 102, 0.35);
+  font-weight: 900;
+  background: linear-gradient(90deg, #ffffff 0%, #9ec5e8 55%, #7fb3e3 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  padding-bottom: 0.15em;
 }}
 .ufm-hero .topline {{
   font-size: 1.05rem;
