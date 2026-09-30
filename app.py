@@ -110,8 +110,12 @@ def scoreboard_fragment(room_id: str) -> None:
 
 def sidebar_leaderboard(room_id: str) -> None:
     """Bảng xếp hạng người chơi trong sidebar (tự sắp xếp điểm cao → thấp, tự làm mới)."""
-    board = room.scoreboard(room_id)
-    count = room.player_count(room_id)
+    try:
+        board = room.scoreboard(room_id)
+        count = room.player_count(room_id)
+    except Exception:  # noqa: BLE001
+        st.caption("Đang tải bảng xếp hạng...")
+        return
     st.markdown("### 🏆 Bảng xếp hạng")
     st.caption(f"{count} người chơi · sắp xếp theo điểm từ cao xuống thấp")
     if not board:

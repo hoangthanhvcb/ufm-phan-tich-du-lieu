@@ -1,6 +1,7 @@
 """Lớp lưu trữ trò chơi: dùng Google Sheets nếu có, nếu không thì SQLite (dự phòng).
 
-Cùng một giao diện hàm cho cả hai backend.
+Nếu Google Sheets gặp lỗi (mạng, quyền, key sai) thì tự động chuyển sang SQLite
+để app không bị sập.
 """
 from __future__ import annotations
 
@@ -18,9 +19,19 @@ DB_PATH = Path(
     os.environ.get("UFM_DB_PATH", str(Path(tempfile.gettempdir()) / "ufm_game.db"))
 )
 
+_gsheets_broken = False
+
 
 def _use_gsheets() -> bool:
+    global _gsheets_broken
+    if _gsheets_broken:
+        return False
     return gsheets.is_available()
+
+
+def _mark_broken() -> None:
+    global _gsheets_broken
+    _gsheets_broken = True
 
 
 def _now() -> str:
@@ -65,8 +76,11 @@ def new_room() -> str:
 
 def save_section_questions(room: str, section: str, questions: list[dict]) -> None:
     if _use_gsheets():
-        gsheets.save_section_questions(room, section, questions)
-        return
+        try:
+            gsheets.save_section_questions(room, section, questions)
+            return
+        except Exception:
+            _mark_broken()
     _init_db()
     con = _conn()
     con.execute(
@@ -79,7 +93,10 @@ def save_section_questions(room: str, section: str, questions: list[dict]) -> No
 
 def get_section_questions(room: str, section: str) -> list[dict] | None:
     if _use_gsheets():
-        return gsheets.get_section_questions(room, section)
+        try:
+            return gsheets.get_section_questions(room, section)
+        except Exception:
+            _mark_broken()
     _init_db()
     con = _conn()
     row = con.execute(
@@ -96,8 +113,11 @@ def get_section_questions(room: str, section: str) -> list[dict] | None:
 
 def register_player(room: str, device_id: str, name: str) -> None:
     if _use_gsheets():
-        gsheets.register_player(room, device_id, name)
-        return
+        try:
+            gsheets.register_player(room, device_id, name)
+            return
+        except Exception:
+            _mark_broken()
     _init_db()
     con = _conn()
     con.execute(
@@ -110,7 +130,10 @@ def register_player(room: str, device_id: str, name: str) -> None:
 
 def get_player(room: str, device_id: str) -> str | None:
     if _use_gsheets():
-        return gsheets.get_player(room, device_id)
+        try:
+            return gsheets.get_player(room, device_id)
+        except Exception:
+            _mark_broken()
     _init_db()
     con = _conn()
     row = con.execute(
@@ -122,8 +145,11 @@ def get_player(room: str, device_id: str) -> str | None:
 
 def save_score(room: str, section: str, device_id: str, name: str, score: int, total: int) -> None:
     if _use_gsheets():
-        gsheets.save_score(room, section, device_id, name, score, total)
-        return
+        try:
+            gsheets.save_score(room, section, device_id, name, score, total)
+            return
+        except Exception:
+            _mark_broken()
     _init_db()
     con = _conn()
     con.execute(
@@ -137,7 +163,10 @@ def save_score(room: str, section: str, device_id: str, name: str, score: int, t
 
 def scoreboard(room: str) -> list[dict]:
     if _use_gsheets():
-        return gsheets.scoreboard(room)
+        try:
+            return gsheets.scoreboard(room)
+        except Exception:
+            _mark_broken()
     _init_db()
     con = _conn()
     rows = con.execute(
@@ -159,7 +188,10 @@ def scoreboard(room: str) -> list[dict]:
 
 def player_count(room: str) -> int:
     if _use_gsheets():
-        return gsheets.player_count(room)
+        try:
+            return gsheets.player_count(room)
+        except Exception:
+            _mark_broken()
     _init_db()
     con = _conn()
     row = con.execute("SELECT COUNT(*) AS c FROM players WHERE room_id = ?", (room,)).fetchone()
