@@ -386,6 +386,31 @@ def presenter_view() -> None:
     if stage == "landing":
         theme.hero()
         st.markdown(theme.card("Hướng dẫn", "Tải lên bộ dữ liệu đã làm sạch, kiểm tra chất lượng, rồi đi qua từng bước phân tích. Ở mỗi bước có trò chơi QR để cả lớp cùng tham gia."), unsafe_allow_html=True)
+
+        # Mời tham gia bằng QR
+        st.markdown("### 🎮 Mời các bạn tham gia trò chơi")
+        if "show_join_qr" not in st.session_state:
+            st.session_state["show_join_qr"] = False
+
+        if not st.session_state["show_join_qr"]:
+            if st.button("📱 Tạo mã QR cho người tham gia", key="join_qr_btn", use_container_width=True):
+                st.session_state["show_join_qr"] = True
+                st.rerun()
+        else:
+            join_url = f"{get_origin()}?view=play&room={room_id}"
+            left, right = st.columns([1, 2])
+            with left:
+                st.markdown(qr.qr_html(join_url, size=250), unsafe_allow_html=True)
+                st.caption(f"Mã phòng: **{room_id}**")
+            with right:
+                st.markdown(
+                    "**Quét mã QR bằng điện thoại** để tham gia trò chơi. "
+                    "Nhập tên xong, tên các bạn sẽ hiện ngay ở **bảng xếp hạng** bên trái."
+                )
+                st.markdown(theme.card("Sẵn sàng chưa?", "Mọi người quét QR và nhập tên trước, khi bạn bắt đầu phân tích và đến từng phần sẽ có câu hỏi mới để trả lời và tính điểm."), unsafe_allow_html=True)
+
+        # Bắt đầu phân tích
+        st.markdown("### 📊 Bắt đầu phân tích dữ liệu")
         c = st.columns(3)
         if c[1].button("🚀 Bắt đầu", key="start_btn", use_container_width=True):
             st.session_state["stage"] = "upload"
