@@ -73,9 +73,29 @@ def reset_room() -> None:
     st.session_state["room_id"] = rid
 
 
+DEFAULT_PUBLIC_URL = os.environ.get(
+    "APP_URL", "https://ufm-phan-tich-du-lieu.streamlit.app"
+)
+
+
+def _secret_url() -> str:
+    try:
+        import streamlit as st
+
+        return st.secrets.get("APP_URL") or os.environ.get("APP_URL") or ""
+    except Exception:
+        return os.environ.get("APP_URL") or ""
+
+
 def get_origin() -> str:
-    if "origin" in st.session_state and st.session_state["origin"]:
+    # 1) Người dùng đã nhập tay ở sidebar
+    if st.session_state.get("origin"):
         return st.session_state["origin"]
+    # 2) Secret / biến môi trường APP_URL
+    env_url = _secret_url()
+    if env_url:
+        return env_url.rstrip("/")
+    # 3) Tự nhận diện URL trình duyệt
     script = """
     <script>
     (function () {
@@ -99,7 +119,8 @@ def get_origin() -> str:
         base = href.split("?")[0].split("#")[0].rstrip("/")
         st.session_state["origin"] = base
         return base
-    return "http://localhost:8501"
+    # 4) Mặc định (URL app đã deploy)
+    return DEFAULT_PUBLIC_URL
 
 
 def scoreboard_fragment(room_id: str) -> None:
