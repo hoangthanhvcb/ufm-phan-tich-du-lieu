@@ -106,24 +106,11 @@ def scoreboard_fragment(room_id: str) -> None:
     if not board:
         st.info("Chưa có người chơi. Hãy mời quét mã QR.")
         return
-    import pandas as pd
-
-    df = pd.DataFrame(board)
-    if "device_id" in df.columns:
-        df = df.drop(columns=["device_id"])
-    df = df.rename(
-        columns={
-            "name": "Người chơi",
-            "total_score": "Tổng điểm",
-            "total_questions": "Số câu",
-            "sections_done": "Số phần",
-        }
-    )
-    st.dataframe(df, use_container_width=True, hide_index=True)
+    st.markdown(theme.leaderboard_html(board), unsafe_allow_html=True)
 
 
 def sidebar_leaderboard(room_id: str) -> None:
-    """Bảng xếp hạng người chơi trong sidebar (tự sắp xếp điểm cao → thấp, tự làm mới)."""
+    """Bảng xếp hạng người chơi trong sidebar (top 3 nổi bật, tự làm mới)."""
     try:
         board = room.scoreboard(room_id)
         count = room.player_count(room_id)
@@ -131,20 +118,8 @@ def sidebar_leaderboard(room_id: str) -> None:
         st.caption("Đang tải bảng xếp hạng...")
         return
     st.markdown("### 🏆 Bảng xếp hạng")
-    st.caption(f"{count} người chơi · sắp xếp theo điểm từ cao xuống thấp")
-    if not board:
-        st.caption("Chưa có người chơi. Mời quét mã QR.")
-        return
-    medals = ["🥇", "🥈", "🥉"]
-    for i, r in enumerate(board):
-        medal = medals[i] if i < 3 else f"{i + 1}."
-        st.markdown(
-            f'<div class="ufm-score-row">'
-            f'<span>{medal} {r["name"]}</span>'
-            f'<span><b>{r["total_score"]}</b> điểm</span>'
-            f"</div>",
-            unsafe_allow_html=True,
-        )
+    st.caption(f"{count} người chơi · top 3 điểm cao nhất")
+    st.markdown(theme.leaderboard_html(board), unsafe_allow_html=True)
 
 
 def render_live_quiz(section_key: str, step_label: str, questions: list[dict], room_id: str) -> None:

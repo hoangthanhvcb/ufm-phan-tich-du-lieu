@@ -88,7 +88,6 @@ def render_play_view() -> None:
 
     player_name = room.get_player(room_id, device_id)
 
-    # Cho phép đổi tên
     if "rename_mode" not in st.session_state:
         st.session_state["rename_mode"] = False
 
@@ -110,45 +109,56 @@ def render_play_view() -> None:
                     st.warning("Vui lòng nhập tên.")
         return
 
-    section = room.get_current_section(room_id)
-
-    st.success(f"Xin chào **{player_name}**! Bạn đang ở phòng `{room_id}`.")
-
-    if st.button("✏️ Đổi tên", key="rename_btn"):
+    c_info, c_btn = st.columns([3, 1])
+    c_info.success(f"Xin chào **{player_name}**! Bạn đang ở phòng `{room_id}`.")
+    if c_btn.button("✏️ Đổi tên", key="rename_btn", use_container_width=True):
         st.session_state["rename_mode"] = True
         st.rerun()
 
-    if section:
-        questions = room.get_section_questions(room_id, section)
-        section_label = _section_label(section)
-        if questions:
-            st.markdown(f"### Câu hỏi · {section_label}")
-            st.markdown("Chọn đáp án cho từng câu rồi bấm **Nộp bài**.")
-            answers = []
-            for i, q in enumerate(questions):
-                answers.append(
-                    st.radio(
-                        f"**{i + 1}. {q['question']}**",
-                        list(range(len(q["options"]))),
-                        format_func=lambda idx, q=q: q["options"][idx],
-                        key=f"play_{section}_{i}",
-                    )
-                )
-            if st.button("📤 Nộp bài", key="play_submit"):
-                score = sum(1 for i, q in enumerate(questions) if answers[i] == q["answer"])
-                room.save_score(room_id, section, device_id, player_name, score, len(questions))
-                st.session_state[f"last_score_{section}"] = (score, len(questions))
-                st.rerun()
+    _live_section(room_id, device_id, player_name)
 
-            if f"last_score_{section}" in st.session_state:
-                sc, tot = st.session_state[f"last_score_{section}"]
-                st.success(f"Kết quả phần này: **{sc}/{tot}** điểm.")
-                _show_my_scoreboard(room_id, device_id)
-        else:
-            st.info("Giảng viên chưa công bố câu hỏi cho phần này. Hãy chờ và quét lại.")
-    else:
-        st.markdown("Quét mã QR ở màn hình giảng viên để trả lời từng phần.")
+
+@st.fragment(run_every=8)
+def _live_section(room_id: str, device_id: str, player_name: str) -> None:
+    """Khối tự làm mới: hiện câu hỏi của phần hiện tại + bảng điểm."""
+    section = room.get_current_section(room_id)
+
+    if not section:
+        st.info("⏳ Giảng viên đang chuẩn bị phần tiếp theo...")
         _show_my_scoreboard(room_id, device_id)
+        return
+
+    questions = room.get_section_questions(room_id, section)
+    section_label = _section_label(section)
+
+    if not questions:
+        st.info("Giảng viên chưa công bố câu hỏi cho phần này.")
+        return
+
+    # Đã nộp bài cho phần này -> hiện kết quả
+    if f"last_score_{section}" in st.session_state:
+        sc, tot = st.session_state[f"last_score_{section}"]
+        st.success(f"📝 Bạn đã nộp phần **{section_label}**: {sc}/{tot} điểm.")
+        _show_my_scoreboard(room_id, device_id)
+        return
+
+    st.markdown(f"### Câu hỏi · {section_label}")
+    st.markdown("Chọn đáp án cho từng câu rồi bấm **Nộp bài**.")
+    answers = []
+    for i, q in enumerate(questions):
+        answers.append(
+            st.radio(
+                f"**{i + 1}. {q['question']}**",
+                list(range(len(q["options"]))),
+                format_func=lambda idx, q=q: q["options"][idx],
+                key=f"play_{section}_{i}",
+            )
+        )
+    if st.button("📤 Nộp bài", key=f"play_submit_{section}"):
+        score = sum(1 for i, q in enumerate(questions) if answers[i] == q["answer"])
+        room.save_score(room_id, section, device_id, player_name, score, len(questions))
+        st.session_state[f"last_score_{section}"] = (score, len(questions))
+        st.rerun()
 
 
 def _section_label(section: str) -> str:
@@ -165,9 +175,4 @@ def _show_my_scoreboard(room_id: str, device_id: str) -> None:
     board = room.scoreboard(room_id)
     if board:
         st.markdown("### 🏆 Bảng điểm")
-        for r in board:
-            st.markdown(
-                f'<div class="ufm-score-row"><span>🏅 {r["name"]}</span>'
-                f'<span>{r["total_score"]} điểm</span></div>',
-                unsafe_allow_html=True,
-            )
+        st.markdown(theme.leaderboard_html(board), unsafe_allow_html=True)

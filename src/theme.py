@@ -189,18 +189,52 @@ div[data-testid="stMetricValue"] {{ color: {BLUE_DARK}; }}
 /* Mã code / phương trình */
 .stCode {{ background: {LIGHT}; }}
 
-/* Bảng điểm */
-.ufm-score-row {{
+/* Bảng xếp hạng */
+.leaderboard {{
+  max-height: 460px;
+  overflow-y: auto;
+  padding-right: 4px;
+}}
+.leaderboard-row {{
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  background: {LIGHT};
-  border-radius: 8px;
-  padding: 0.5rem 0.9rem;
-  margin: 0.3rem 0;
+  gap: 0.5rem;
+  background: #ffffff;
+  border: 1px solid #e3edf7;
+  border-radius: 10px;
+  padding: 0.45rem 0.7rem;
+  margin: 0.25rem 0;
   font-weight: 600;
   color: {BLUE_DARK};
 }}
+.leaderboard-row .rank {{
+  flex: 0 0 2.2rem;
+  text-align: center;
+  font-weight: 800;
+  color: {BLUE};
+  font-size: 0.95rem;
+}}
+.leaderboard-row .lname {{
+  flex: 1;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}}
+.leaderboard-row .lscore {{
+  flex: 0 0 auto;
+  font-weight: 800;
+  background: {LIGHT};
+  border-radius: 999px;
+  padding: 0.1rem 0.6rem;
+  font-size: 0.9rem;
+}}
+.leaderboard-top1 {{ background: linear-gradient(135deg, #fff8e1, #ffe082); border-color: #f0c674; }}
+.leaderboard-top1 .rank {{ color: #c98a00; }}
+.leaderboard-top2 {{ background: linear-gradient(135deg, #f3f6fa, #d7e2ee); border-color: #b8c8d8; }}
+.leaderboard-top2 .rank {{ color: #7a8ca0; }}
+.leaderboard-top3 {{ background: linear-gradient(135deg, #fdf1ec, #f0c4a8); border-color: #d9a07a; }}
+.leaderboard-top3 .rank {{ color: #b06a3a; }}
 
 /* Nút tiếp tục lớn */
 .ufm-next .stButton > button {{
@@ -256,6 +290,32 @@ def hero() -> None:
 
 def card(title: str, body: str) -> str:
     return f'<div class="ufm-card"><h4>{title}</h4><p>{body}</p></div>'
+
+
+def leaderboard_html(board: list[dict]) -> str:
+    """Sinh HTML bảng xếp hạng: top 3 nổi bật, danh sách cuộn khi đông người."""
+    if not board:
+        return '<div class="leaderboard" style="color:#5B6B7C;">Chưa có người chơi.</div>'
+    rows = []
+    medals = ["🥇", "🥈", "🥉"]
+    for i, r in enumerate(board):
+        cls = "leaderboard-row"
+        if i == 0:
+            cls += " leaderboard-top1"
+        elif i == 1:
+            cls += " leaderboard-top2"
+        elif i == 2:
+            cls += " leaderboard-top3"
+        medal = medals[i] if i < 3 else ""
+        rank = medal if medal else f"{i + 1}"
+        rows.append(
+            f'<div class="{cls}">'
+            f'<span class="rank">{rank}</span>'
+            f'<span class="lname">{r["name"]}</span>'
+            f'<span class="lscore">{r["total_score"]} điểm</span>'
+            f"</div>"
+        )
+    return '<div class="leaderboard">' + "".join(rows) + "</div>"
 
 
 def step_badge(index: int, label: str) -> None:
