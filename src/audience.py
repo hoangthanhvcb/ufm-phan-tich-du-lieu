@@ -9,27 +9,36 @@ from src import theme
 
 _DEVICE_KEY = "ufm_dev_id"
 
+_DEVICE_SCRIPT = """
+<script>
+(function () {
+  const KEY = 'ufm_dev_id';
+  let id = null;
+  try { id = localStorage.getItem(KEY); } catch (e) {}
+  if (!id) {
+    id = (window.crypto && crypto.randomUUID)
+      ? crypto.randomUUID()
+      : 'd' + Date.now() + Math.random().toString(16).slice(2);
+    try { localStorage.setItem(KEY, id); } catch (e) {}
+  }
+  const send = function () {
+    if (window.Streamlit && typeof window.Streamlit.setComponentValue === 'function') {
+      window.Streamlit.setComponentValue(id);
+    } else {
+      setTimeout(send, 60);
+    }
+  };
+  send();
+})();
+</script>
+"""
+
 
 def get_device_id() -> str:
     """Lấy/cấp mã thiết bị từ localStorage (giữ ổn định khi quét QR nhiều lần)."""
     if "device_id" in st.session_state and st.session_state["device_id"]:
         return st.session_state["device_id"]
-    device = components.html(
-        f"""
-        <script>
-        const KEY = '{_DEVICE_KEY}';
-        let id = localStorage.getItem(KEY);
-        if (!id) {{
-            id = (window.crypto && crypto.randomUUID)
-                ? crypto.randomUUID()
-                : 'd' + Date.now() + Math.random().toString(16).slice(2);
-            localStorage.setItem(KEY, id);
-        }}
-        Streamlit.setComponentValue(id);
-        </script>
-        """,
-        height=0,
-    )
+    device = components.html(_DEVICE_SCRIPT, height=0)
     if isinstance(device, str) and device:
         st.session_state["device_id"] = device
         return device
