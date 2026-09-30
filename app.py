@@ -381,21 +381,21 @@ STEP_RENDERERS = {
 # ---------------------------------------------------------------------------
 def presenter_view() -> None:
     room_id = get_room_id()
+    ai_cfg = ai.get_config()
 
     with st.sidebar:
         st.markdown("### 🎮 Bảng điều khiển")
         # Bảng xếp hạng người chơi (tự làm mới, điểm cao → thấp)
         st.fragment(sidebar_leaderboard, run_every=5)(room_id)
 
-        with st.expander("🔗 Cài đặt & AI", expanded=False):
+        # Trạng thái kết nối AI
+        ai.render_status(ai_cfg)
+
+        with st.expander("🔗 Cài đặt", expanded=False):
             origin = get_origin()
             pub_url = st.text_input("URL công khai cho người tham gia", value=origin)
             if pub_url and pub_url != origin:
                 st.session_state["origin"] = pub_url.rstrip("/")
-            ai_cfg = ai.sidebar_config()
-
-    if "ai_cfg" not in locals():
-        ai_cfg = {"enabled": False, "api_key": "", "model": "gemini-2.0-flash"}
 
     stage = st.session_state.get("stage", "landing")
 

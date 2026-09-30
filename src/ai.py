@@ -33,43 +33,44 @@ def _default_openrouter_key() -> str:
 
 
 # ---------------------------------------------------------------------------
-# Cấu hình ở sidebar
+# Cấu hình AI (đọc ngầm từ secrets/môi trường, không hiển thị UI)
 # ---------------------------------------------------------------------------
-def sidebar_config() -> dict:
-    """Hiển thị cấu hình AI (đặt trong container hiện tại, ví dụ sidebar expander).
+def get_config() -> dict:
+    """Đọc cấu hình AI ngầm từ secrets/môi trường.
 
-    Nếu đã có API key trong secrets/môi trường thì tự điền và tự bật sẵn.
+    Ưu tiên OpenRouter nếu có key, ngược lại dùng Gemini.
     """
-    provider = st.selectbox(
-        "Nhà cung cấp AI",
-        ["gemini", "openrouter"],
-        format_func=lambda p: "Google Gemini" if p == "gemini" else "OpenRouter",
-    )
-    if provider == "gemini":
-        default_key = _default_api_key()
-        key_label = "Gemini API key"
-        default_model = DEFAULT_MODEL
+    gemini_key = _default_api_key()
+    openrouter_key = _default_openrouter_key()
+
+    if openrouter_key:
+        provider = "openrouter"
+        api_key = openrouter_key
+        model = os.environ.get("OPENROUTER_MODEL") or DEFAULT_OPENROUTER_MODEL
+    elif gemini_key:
+        provider = "gemini"
+        api_key = gemini_key
+        model = os.environ.get("GEMINI_MODEL") or DEFAULT_MODEL
     else:
-        default_key = _default_openrouter_key()
-        key_label = "OpenRouter API key"
-        default_model = DEFAULT_OPENROUTER_MODEL
-
-    enabled = st.checkbox("Bật AI để sinh câu hỏi & gợi ý", value=bool(default_key))
-    api_key = st.text_input(key_label, value=default_key, type="password")
-    model = st.text_input("Tên model", value=default_model)
-
-    if enabled and not api_key:
-        if provider == "gemini":
-            st.caption("Lấy key miễn phí tại https://aistudio.google.com/app/apikey")
-        else:
-            st.caption("Lấy key miễn phí tại https://openrouter.ai/keys")
+        provider = "gemini"
+        api_key = ""
+        model = DEFAULT_MODEL
 
     return {
-        "enabled": enabled and bool(api_key),
+        "enabled": bool(api_key),
         "provider": provider,
-        "api_key": api_key or default_key,
-        "model": model or default_model,
+        "api_key": api_key,
+        "model": model,
     }
+
+
+def render_status(cfg: dict) -> None:
+    """Hiển thị trạng thái kết nối AI ngắn gọn (chỉ báo đã/chưa kết nối)."""
+    if cfg.get("enabled"):
+        name = "OpenRouter" if cfg.get("provider") == "openrouter" else "Google Gemini"
+        st.success(f"🤖 AI đã kết nối · {name}")
+    else:
+        st.warning("🤖 AI chưa kết nối")
 
 
 # ---------------------------------------------------------------------------
