@@ -216,6 +216,20 @@ def generate_suggestions(
     return lines
 
 
+def analyze_data_quality(context: str, api_key: str, model: str, provider: str = "gemini") -> str:
+    """Yêu cầu AI nhận xét ngắn gọn về chất lượng dữ liệu và gợi ý sửa nếu cần."""
+    prompt = (
+        "Bạn là chuyên gia phân tích dữ liệu định lượng. Dưới đây là kết quả kiểm tra "
+        "chất lượng dữ liệu (tính đầy đủ và nhất quán). Hãy:\n"
+        "1) Đưa ra NHẬN XÉT ngắn gọn (2-3 câu) về chất lượng dữ liệu.\n"
+        "2) Nếu có vấn đề, đưa ra GỢI Ý CỤ THỂ cách sửa từng vấn đề (mỗi ý một dòng, bắt đầu bằng '- ').\n"
+        "3) Kết luận ngắn: dữ liệu có phù hợp để phân tích tiếp hay cần làm sạch lại.\n\n"
+        f"KẾT QUẢ KIỂM TRA DỮ LIỆU:\n{context}\n\n"
+        "Trả lời bằng tiếng Việt, ngắn gọn, rõ ràng."
+    )
+    return _call_llm(provider, api_key, prompt, model)
+
+
 # ---------------------------------------------------------------------------
 # Khối giao diện AI nhúng vào từng bước
 # ---------------------------------------------------------------------------

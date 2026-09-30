@@ -77,6 +77,24 @@ def new_room() -> str:
     return secrets.token_hex(3).upper()
 
 
+def reset_all() -> None:
+    """Xóa toàn bộ dữ liệu trò chơi (người chơi, điểm, câu hỏi, phần hiện tại)."""
+    if _use_gsheets():
+        try:
+            gsheets.reset_all()
+            return
+        except Exception:
+            _mark_broken()
+    _init_db()
+    con = _conn()
+    con.execute("DELETE FROM rooms")
+    con.execute("DELETE FROM players")
+    con.execute("DELETE FROM sections")
+    con.execute("DELETE FROM answers")
+    con.commit()
+    con.close()
+
+
 def set_current_section(room: str, section: str) -> None:
     if _use_gsheets():
         try:

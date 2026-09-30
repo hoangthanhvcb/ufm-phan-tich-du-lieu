@@ -161,6 +161,12 @@ def _upsert(sheet_name: str, key_indices: list[int], new_row: list[str]) -> None
 # ---------------------------------------------------------------------------
 # API cho room.py
 # ---------------------------------------------------------------------------
+def reset_all() -> None:
+    """Xóa toàn bộ dữ liệu trò chơi (giữ tiêu đề cột)."""
+    for sheet in ("rooms", "players", "sections", "answers"):
+        _write_all(sheet, [])
+
+
 def set_current_section(room: str, section: str) -> None:
     _upsert("rooms", [0], [room, section])
 

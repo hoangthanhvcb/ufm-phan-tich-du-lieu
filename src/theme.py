@@ -42,18 +42,18 @@ header[data-testid="stHeader"] {{
   background: rgba(10, 77, 140, 0.02);
 }}
 
-/* Sidebar (nền sáng để bảng xếp hạng dễ đọc) */
+/* Sidebar (nền xanh đậm + chữ trắng) */
 section[data-testid="stSidebar"] {{
-  background: #f5f9ff;
-  border-right: 1px solid #e3edf7;
+  background: linear-gradient(180deg, {BLUE_DARK} 0%, {BLUE_DEEP} 100%);
+  border-right: 1px solid rgba(255,255,255,0.08);
 }}
 section[data-testid="stSidebar"] * {{
-  color: {BLUE_DARK};
+  color: #ffffff;
 }}
 section[data-testid="stSidebar"] .stButton > button {{
-  background: #ffffff;
-  color: {BLUE};
-  border: 1px solid {BLUE};
+  background: rgba(255,255,255,0.12);
+  color: #ffffff;
+  border: 1px solid rgba(255,255,255,0.3);
 }}
 
 /* Nút bấm chính */
@@ -206,13 +206,13 @@ div[data-testid="stMetricValue"] {{ color: {BLUE_DARK}; }}
   padding: 0.45rem 0.7rem;
   margin: 0.25rem 0;
   font-weight: 600;
-  color: {BLUE_DARK};
+  color: {BLUE_DARK} !important;
 }}
 .leaderboard-row .rank {{
   flex: 0 0 2.2rem;
   text-align: center;
   font-weight: 800;
-  color: {BLUE};
+  color: {BLUE} !important;
   font-size: 0.95rem;
 }}
 .leaderboard-row .lname {{
@@ -221,6 +221,7 @@ div[data-testid="stMetricValue"] {{ color: {BLUE_DARK}; }}
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  color: {BLUE_DARK} !important;
 }}
 .leaderboard-row .lscore {{
   flex: 0 0 auto;
@@ -229,13 +230,14 @@ div[data-testid="stMetricValue"] {{ color: {BLUE_DARK}; }}
   border-radius: 999px;
   padding: 0.1rem 0.6rem;
   font-size: 0.9rem;
+  color: {BLUE_DARK} !important;
 }}
 .leaderboard-top1 {{ background: linear-gradient(135deg, #fff8e1, #ffe082); border-color: #f0c674; }}
-.leaderboard-top1 .rank {{ color: #c98a00; }}
+.leaderboard-top1 .rank {{ color: #c98a00 !important; }}
 .leaderboard-top2 {{ background: linear-gradient(135deg, #f3f6fa, #d7e2ee); border-color: #b8c8d8; }}
-.leaderboard-top2 .rank {{ color: #7a8ca0; }}
+.leaderboard-top2 .rank {{ color: #7a8ca0 !important; }}
 .leaderboard-top3 {{ background: linear-gradient(135deg, #fdf1ec, #f0c4a8); border-color: #d9a07a; }}
-.leaderboard-top3 .rank {{ color: #b06a3a; }}
+.leaderboard-top3 .rank {{ color: #b06a3a !important; }}
 
 /* Nút tiếp tục lớn */
 .ufm-next .stButton > button {{

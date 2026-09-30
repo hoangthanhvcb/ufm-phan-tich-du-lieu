@@ -389,6 +389,30 @@ def render_nav_bar(stage: str, step_idx: int) -> None:
     st.markdown("---")
 
 
+def _build_dq_context(completeness: dict, consistency: dict, issues: list[dict]) -> str:
+    """Tạo văn bản tóm tắt kết quả kiểm tra dữ liệu để gửi cho AI."""
+    lines = [
+        f"Số dòng: {completeness['n_rows']}, số cột: {completeness['n_cols']}",
+        f"Ô trống: {completeness['missing_cells']} ({completeness['missing_pct']}%)",
+        f"Dòng trùng lặp: {completeness['dup_rows']}",
+        f"Dòng có ô trống: {completeness['rows_with_missing']}",
+    ]
+    if not completeness["missing_by_col"].empty:
+        lines.append("Cột bị thiếu dữ liệu:\n" + completeness["missing_by_col"].to_string())
+    if consistency["cat_inconsistencies"]:
+        lines.append("Giá trị phân loại không nhất quán:")
+        for col, tbl in consistency["cat_inconsistencies"].items():
+            lines.append(f"- Cột {col}: {tbl.to_dict('records')}")
+    if consistency["constant_cols"]:
+        lines.append("Cột giá trị không đổi: " + ", ".join(consistency["constant_cols"]))
+    if not consistency["numeric_anomalies"].empty:
+        lines.append("Giá trị vô hạn:\n" + consistency["numeric_anomalies"].to_string())
+    lines.append("Các vấn đề phát hiện:")
+    for issue in issues:
+        lines.append(f"- [{issue['mức']}] {issue['msg']}")
+    return "\n".join(lines)
+
+
 def presenter_view() -> None:
     room_id = get_room_id()
     ai_cfg = ai.get_config()
@@ -428,6 +452,14 @@ def presenter_view() -> None:
             pub_url = st.text_input("URL công khai cho người tham gia", value=origin)
             if pub_url and pub_url != origin:
                 st.session_state["origin"] = pub_url.rstrip("/")
+
+        # Nút reset toàn bộ
+        st.markdown("---")
+        if st.button("🔄 Reset toàn bộ", key="reset_all_btn", use_container_width=True):
+            room.reset_all()
+            for k in list(st.session_state.keys()):
+                del st.session_state[k]
+            st.rerun()
 
     # Thanh điều hướng (Home / Lùi / Tiếp)
     render_nav_bar(stage, step_idx)
@@ -484,7 +516,7 @@ def presenter_view() -> None:
     df = st.session_state.get("df")
 
     if stage == "upload":
-        theme.step_badge(1, "Tải lên dữ liệu")
+        theme.step_badge(1, "Hãy tải lên dữ liệu của bạn")
         uploaded = st.file_uploader("Chọn file (.csv hoặc .xlsx)", type=["csv", "xlsx", "xls"])
         if uploaded is not None:
             try:
@@ -507,6 +539,7 @@ def presenter_view() -> None:
                 st.dataframe(df.head(100), use_container_width=True)
             if st.button("🔍 Kiểm tra dữ liệu", key="check_btn", use_container_width=True):
                 st.session_state["stage"] = "check"
+                st.session_state.pop("dq_ai_analysis", None)
                 st.rerun()
         return
 
@@ -545,6 +578,21 @@ def presenter_view() -> None:
                 st.markdown("Cột giá trị không đổi: " + ", ".join(consistency["constant_cols"]))
             if not consistency["numeric_anomalies"].empty:
                 st.dataframe(consistency["numeric_anomalies"], use_container_width=True)
+
+        # AI nhận xét chất lượng dữ liệu
+        if ai_cfg.get("enabled"):
+            if "dq_ai_analysis" not in st.session_state:
+                _ctx = _build_dq_context(completeness, consistency, issues)
+                with st.spinner("🤖 AI đang phân tích chất lượng dữ liệu..."):
+                    try:
+                        st.session_state["dq_ai_analysis"] = ai.analyze_data_quality(
+                            _ctx, ai_cfg["api_key"], ai_cfg["model"], ai_cfg.get("provider", "gemini")
+                        )
+                    except Exception as e:  # noqa: BLE001
+                        st.session_state["dq_ai_analysis"] = None
+            if st.session_state.get("dq_ai_analysis"):
+                st.markdown("### 🤖 AI nhận xét")
+                st.markdown(st.session_state["dq_ai_analysis"])
 
         if st.button("➡️ Tiếp tục đến các bước phân tích", key="to_steps_btn", use_container_width=True):
             st.session_state["stage"] = "steps"
