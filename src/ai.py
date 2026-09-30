@@ -1,4 +1,4 @@
-"""Kết nối AI (Google Gemini) để tự sinh câu hỏi và gợi ý phân tích."""
+"""Kết nối AI (Google Gemini / OpenRouter) để tự sinh câu hỏi và gợi ý phân tích."""
 from __future__ import annotations
 
 import json
@@ -9,16 +9,27 @@ import urllib.request
 import streamlit as st
 
 DEFAULT_MODEL = "gemini-2.0-flash"
+DEFAULT_OPENROUTER_MODEL = "meta-llama/llama-3.3-70b-instruct:free"
 
 
 def _default_api_key() -> str:
-    """Lấy API key từ Streamlit secrets hoặc biến môi trường (kết nối sẵn)."""
+    """Lấy Gemini API key từ Streamlit secrets hoặc biến môi trường."""
     try:
         import streamlit as st
 
         return st.secrets.get("GEMINI_API_KEY") or os.environ.get("GEMINI_API_KEY") or ""
     except Exception:
         return os.environ.get("GEMINI_API_KEY") or ""
+
+
+def _default_openrouter_key() -> str:
+    """Lấy OpenRouter API key từ Streamlit secrets hoặc biến môi trường."""
+    try:
+        import streamlit as st
+
+        return st.secrets.get("OPENROUTER_API_KEY") or os.environ.get("OPENROUTER_API_KEY") or ""
+    except Exception:
+        return os.environ.get("OPENROUTER_API_KEY") or ""
 
 
 # ---------------------------------------------------------------------------
@@ -29,19 +40,41 @@ def sidebar_config() -> dict:
 
     Nếu đã có API key trong secrets/môi trường thì tự điền và tự bật sẵn.
     """
-    default_key = _default_api_key()
+    provider = st.selectbox(
+        "Nhà cung cấp AI",
+        ["gemini", "openrouter"],
+        format_func=lambda p: "Google Gemini" if p == "gemini" else "OpenRouter",
+    )
+    if provider == "gemini":
+        default_key = _default_api_key()
+        key_label = "Gemini API key"
+        default_model = DEFAULT_MODEL
+    else:
+        default_key = _default_openrouter_key()
+        key_label = "OpenRouter API key"
+        default_model = DEFAULT_OPENROUTER_MODEL
+
     enabled = st.checkbox("Bật AI để sinh câu hỏi & gợi ý", value=bool(default_key))
-    api_key = st.text_input("Gemini API key", value=default_key, type="password")
-    model = st.text_input("Tên model", value=DEFAULT_MODEL)
+    api_key = st.text_input(key_label, value=default_key, type="password")
+    model = st.text_input("Tên model", value=default_model)
+
     if enabled and not api_key:
-        st.caption("Nhập API key từ Google AI Studio (https://aistudio.google.com).")
+        if provider == "gemini":
+            st.caption("Lấy key miễn phí tại https://aistudio.google.com/app/apikey")
+        else:
+            st.caption("Lấy key miễn phí tại https://openrouter.ai/keys")
+
     return {
         "enabled": enabled and bool(api_key),
+        "provider": provider,
         "api_key": api_key or default_key,
-        "model": model or DEFAULT_MODEL,
+        "model": model or default_model,
     }
 
 
+# ---------------------------------------------------------------------------
+# Gọi API
+# ---------------------------------------------------------------------------
 def _call_gemini(api_key: str, prompt: str, model: str) -> str:
     """Gọi Gemini REST API và trả về nội dung văn bản trả lời."""
     url = (
@@ -63,6 +96,37 @@ def _call_gemini(api_key: str, prompt: str, model: str) -> str:
         return data["candidates"][0]["content"]["parts"][0]["text"]
     except (KeyError, IndexError):
         raise RuntimeError("Phản hồi AI không đúng định dạng mong đợi.") from None
+
+
+def _call_openrouter(api_key: str, prompt: str, model: str) -> str:
+    """Gọi OpenRouter API (tương thích OpenAI) và trả về văn bản trả lời."""
+    url = "https://openrouter.ai/api/v1/chat/completions"
+    body = {
+        "model": model,
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.7,
+        "max_tokens": 2048,
+    }
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(body).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}",
+        },
+    )
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+    try:
+        return data["choices"][0]["message"]["content"]
+    except (KeyError, IndexError):
+        raise RuntimeError("Phản hồi AI không đúng định dạng mong đợi.") from None
+
+
+def _call_llm(provider: str, api_key: str, prompt: str, model: str) -> str:
+    if provider == "openrouter":
+        return _call_openrouter(api_key, prompt, model)
+    return _call_gemini(api_key, prompt, model)
 
 
 def _extract_json(text: str):
@@ -108,7 +172,9 @@ def _sanitize_questions(raw: list) -> list[dict]:
     return out
 
 
-def generate_quiz_questions(step_name: str, context: str, api_key: str, model: str) -> list[dict]:
+def generate_quiz_questions(
+    step_name: str, context: str, api_key: str, model: str, provider: str = "gemini"
+) -> list[dict]:
     """Yêu cầu AI sinh câu hỏi trắc nghiệm phù hợp với bước phân tích."""
     prompt = (
         "Bạn là trợ lý giảng dạy môn Phương pháp nghiên cứu khoa học. "
@@ -119,14 +185,16 @@ def generate_quiz_questions(step_name: str, context: str, api_key: str, model: s
         '{"question": "...", "options": ["A", "B", "C", "D"], "answer": <số 0-3>, "explanation": "..."}\n'
         "Câu hỏi viết bằng tiếng Việt, có đúng một đáp án đúng (answer là chỉ số trong options)."
     )
-    text = _call_gemini(api_key, prompt, model)
+    text = _call_llm(provider, api_key, prompt, model)
     return _sanitize_questions(_extract_json(text))
 
 
 # ---------------------------------------------------------------------------
 # Sinh gợi ý
 # ---------------------------------------------------------------------------
-def generate_suggestions(step_name: str, context: str, api_key: str, model: str) -> list[str]:
+def generate_suggestions(
+    step_name: str, context: str, api_key: str, model: str, provider: str = "gemini"
+) -> list[str]:
     """Yêu cầu AI đưa ra gợi ý giải thích và cải thiện cho bước phân tích."""
     prompt = (
         "Bạn là chuyên gia phân tích dữ liệu định lượng. "
@@ -136,7 +204,7 @@ def generate_suggestions(step_name: str, context: str, api_key: str, model: str)
         f"KẾT QUẢ BƯỚC '{step_name}':\n{context}\n\n"
         "Trả lời bằng tiếng Việt, mỗi gợi ý trên một dòng bắt đầu bằng dấu gạch ngang '- '."
     )
-    text = _call_gemini(api_key, prompt, model)
+    text = _call_llm(provider, api_key, prompt, model)
     lines = []
     for line in text.splitlines():
         line = line.strip()
@@ -167,7 +235,7 @@ def render_ai_enhancements(step_name: str, context: str, key_prefix: str, cfg: d
             with st.spinner("AI đang sinh câu hỏi..."):
                 try:
                     qs = generate_quiz_questions(
-                        step_name, context, cfg["api_key"], cfg["model"]
+                        step_name, context, cfg["api_key"], cfg["model"], cfg.get("provider", "gemini")
                     )
                     if qs:
                         st.session_state[q_key] = qs
@@ -191,7 +259,7 @@ def render_ai_enhancements(step_name: str, context: str, key_prefix: str, cfg: d
             with st.spinner("AI đang phân tích..."):
                 try:
                     sugg = generate_suggestions(
-                        step_name, context, cfg["api_key"], cfg["model"]
+                        step_name, context, cfg["api_key"], cfg["model"], cfg.get("provider", "gemini")
                     )
                     st.session_state[s_key] = sugg
                 except Exception as e:  # noqa: BLE001
