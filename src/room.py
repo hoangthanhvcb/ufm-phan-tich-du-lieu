@@ -1,10 +1,6 @@
-"""Backend lưu trữ chia sẻ (SQLite) cho trò chơi QR nhiều thiết bị.
+"""Lớp lưu trữ trò chơi: dùng Google Sheets nếu có, nếu không thì SQLite (dự phòng).
 
-Mô hình:
-  - room: mã phòng (một buổi trình bày).
-  - section: mỗi bước phân tích lưu câu hỏi dạng JSON.
-  - players: người chơi theo device_id (nhận diện cùng thiết bị khi quét lại QR).
-  - answers: điểm từng phần để tính tổng.
+Cùng một giao diện hàm cho cả hai backend.
 """
 from __future__ import annotations
 
@@ -16,46 +12,45 @@ import tempfile
 from datetime import datetime
 from pathlib import Path
 
+from src import gsheets
+
 DB_PATH = Path(
     os.environ.get("UFM_DB_PATH", str(Path(tempfile.gettempdir()) / "ufm_game.db"))
 )
 
 
+def _use_gsheets() -> bool:
+    return gsheets.is_available()
+
+
+def _now() -> str:
+    return datetime.now().isoformat(timespec="seconds")
+
+
+# ---------------------------------------------------------------------------
+# SQLite (dự phòng)
+# ---------------------------------------------------------------------------
 def _conn() -> sqlite3.Connection:
     con = sqlite3.connect(DB_PATH, check_same_thread=False)
     con.row_factory = sqlite3.Row
     return con
 
 
-def init_db() -> None:
+def _init_db() -> None:
     con = _conn()
     con.executescript(
         """
-        CREATE TABLE IF NOT EXISTS rooms (
-            room_id TEXT PRIMARY KEY,
-            created_at TEXT
-        );
         CREATE TABLE IF NOT EXISTS sections (
-            room_id TEXT,
-            section TEXT,
-            questions TEXT,
+            room_id TEXT, section TEXT, questions TEXT,
             PRIMARY KEY (room_id, section)
         );
         CREATE TABLE IF NOT EXISTS players (
-            room_id TEXT,
-            device_id TEXT,
-            name TEXT,
-            joined_at TEXT,
+            room_id TEXT, device_id TEXT, name TEXT, joined_at TEXT,
             PRIMARY KEY (room_id, device_id)
         );
         CREATE TABLE IF NOT EXISTS answers (
-            room_id TEXT,
-            section TEXT,
-            device_id TEXT,
-            name TEXT,
-            score INTEGER,
-            total INTEGER,
-            answered_at TEXT
+            room_id TEXT, section TEXT, device_id TEXT, name TEXT,
+            score INTEGER, total INTEGER, answered_at TEXT
         );
         """
     )
@@ -64,25 +59,15 @@ def init_db() -> None:
 
 
 def new_room() -> str:
-    """Tạo mã phòng 6 ký tự (chữ hoa + số)."""
-    init_db()
-    room = secrets.token_hex(3).upper()
-    con = _conn()
-    con.execute("INSERT OR IGNORE INTO rooms (room_id, created_at) VALUES (?, ?)", (room, _now()))
-    con.commit()
-    con.close()
-    return room
+    """Tạo mã phòng 6 ký tự (không cần lưu trữ)."""
+    return secrets.token_hex(3).upper()
 
 
-def _now() -> str:
-    return datetime.now().isoformat(timespec="seconds")
-
-
-# ---------------------------------------------------------------------------
-# Câu hỏi của từng phần
-# ---------------------------------------------------------------------------
 def save_section_questions(room: str, section: str, questions: list[dict]) -> None:
-    init_db()
+    if _use_gsheets():
+        gsheets.save_section_questions(room, section, questions)
+        return
+    _init_db()
     con = _conn()
     con.execute(
         "INSERT OR REPLACE INTO sections (room_id, section, questions) VALUES (?, ?, ?)",
@@ -93,7 +78,9 @@ def save_section_questions(room: str, section: str, questions: list[dict]) -> No
 
 
 def get_section_questions(room: str, section: str) -> list[dict] | None:
-    init_db()
+    if _use_gsheets():
+        return gsheets.get_section_questions(room, section)
+    _init_db()
     con = _conn()
     row = con.execute(
         "SELECT questions FROM sections WHERE room_id = ? AND section = ?", (room, section)
@@ -107,11 +94,11 @@ def get_section_questions(room: str, section: str) -> list[dict] | None:
         return None
 
 
-# ---------------------------------------------------------------------------
-# Người chơi
-# ---------------------------------------------------------------------------
 def register_player(room: str, device_id: str, name: str) -> None:
-    init_db()
+    if _use_gsheets():
+        gsheets.register_player(room, device_id, name)
+        return
+    _init_db()
     con = _conn()
     con.execute(
         "INSERT OR REPLACE INTO players (room_id, device_id, name, joined_at) VALUES (?, ?, ?, ?)",
@@ -122,7 +109,9 @@ def register_player(room: str, device_id: str, name: str) -> None:
 
 
 def get_player(room: str, device_id: str) -> str | None:
-    init_db()
+    if _use_gsheets():
+        return gsheets.get_player(room, device_id)
+    _init_db()
     con = _conn()
     row = con.execute(
         "SELECT name FROM players WHERE room_id = ? AND device_id = ?", (room, device_id)
@@ -131,11 +120,11 @@ def get_player(room: str, device_id: str) -> str | None:
     return row["name"] if row else None
 
 
-# ---------------------------------------------------------------------------
-# Điểm số
-# ---------------------------------------------------------------------------
 def save_score(room: str, section: str, device_id: str, name: str, score: int, total: int) -> None:
-    init_db()
+    if _use_gsheets():
+        gsheets.save_score(room, section, device_id, name, score, total)
+        return
+    _init_db()
     con = _conn()
     con.execute(
         "INSERT OR REPLACE INTO answers (room_id, section, device_id, name, score, total, answered_at) "
@@ -147,8 +136,9 @@ def save_score(room: str, section: str, device_id: str, name: str, score: int, t
 
 
 def scoreboard(room: str) -> list[dict]:
-    """Bảng điểm tổng của tất cả người chơi trong phòng (giảm dần)."""
-    init_db()
+    if _use_gsheets():
+        return gsheets.scoreboard(room)
+    _init_db()
     con = _conn()
     rows = con.execute(
         """
@@ -167,29 +157,10 @@ def scoreboard(room: str) -> list[dict]:
     return [dict(r) for r in rows]
 
 
-def scoreboard_by_device(room: str) -> list[dict]:
-    """Bảng điểm chi tiết theo từng thiết bị (kèm điểm từng phần)."""
-    init_db()
-    con = _conn()
-    rows = con.execute(
-        """
-        SELECT p.device_id, p.name,
-               COALESCE(SUM(a.score), 0) AS total_score,
-               GROUP_CONCAT(a.section || ':' || a.score || '/' || a.total, '; ') AS detail
-        FROM players p
-        LEFT JOIN answers a ON p.room_id = a.room_id AND p.device_id = a.device_id
-        WHERE p.room_id = ?
-        GROUP BY p.device_id, p.name
-        ORDER BY total_score DESC
-        """,
-        (room,),
-    ).fetchall()
-    con.close()
-    return [dict(r) for r in rows]
-
-
 def player_count(room: str) -> int:
-    init_db()
+    if _use_gsheets():
+        return gsheets.player_count(room)
+    _init_db()
     con = _conn()
     row = con.execute("SELECT COUNT(*) AS c FROM players WHERE room_id = ?", (room,)).fetchone()
     con.close()
