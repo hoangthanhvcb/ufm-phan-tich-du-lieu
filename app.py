@@ -413,17 +413,17 @@ def presenter_view() -> None:
         theme.hero()
         st.markdown(theme.card("Hướng dẫn", "Tải lên bộ dữ liệu đã làm sạch, kiểm tra chất lượng, rồi đi qua từng bước phân tích. Ở mỗi bước có trò chơi QR để cả lớp cùng tham gia."), unsafe_allow_html=True)
 
-        # Slide hướng dẫn (Canva) - hiển thị trực tiếp
-        st.markdown("### 📖 Slide hướng dẫn")
+        # Slide bài nhóm (Canva) - hiển thị trực tiếp
+        st.markdown("### 📖 Slide bài nhóm")
         c_btn, c_note = st.columns([1, 3])
         c_btn.link_button(
             "🔲 Phóng to toàn màn hình",
-            "https://www.canva.com/design/DAHWBaLveP8/view",
+            "https://www.canva.com/design/DAHWBaLveP8/cyOuZSUx3yKO6xa4PTiaUw/view",
             use_container_width=True,
         )
         c_note.caption("Bấm nút để mở slide ở chế độ toàn màn hình, dễ dàng chuyển slide khi thuyết trình.")
         components.iframe(
-            "https://www.canva.com/design/DAHWBaLveP8/view?embed",
+            "https://www.canva.com/design/DAHWBaLveP8/cyOuZSUx3yKO6xa4PTiaUw/view?embed",
             height=520,
         )
 
