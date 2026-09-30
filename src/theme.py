@@ -112,10 +112,24 @@ h1, h2, h3 {{
 }}
 .ufm-hero h1 {{
   color: #ffffff;
-  font-size: 2.6rem;
+  font-size: 2.7rem;
   font-weight: 800;
-  margin: 0.4rem 0;
+  margin: 0.2rem 0 0.6rem 0;
   letter-spacing: -0.02em;
+  line-height: 1.25;
+}}
+.ufm-hero h1 .highlight {{
+  display: block;
+  color: #ffd166;
+  text-shadow: 0 2px 14px rgba(255, 209, 102, 0.35);
+}}
+.ufm-hero .topline {{
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #9ec5e8;
+  margin-bottom: 0.2rem;
 }}
 .ufm-hero .sub {{
   color: #cfe3f7;
@@ -216,10 +230,8 @@ def hero() -> None:
         f"""
         <div class="ufm-hero">
             {logo_html}
-            <h1>Phương pháp nghiên cứu khoa học - Xử lý và phân tích dữ liệu định lượng</h1>
-            <div class="sub">
-                Trường Đại học Tài chính – Marketing (UFM)
-            </div>
+            <div class="topline">Phương pháp nghiên cứu khoa học</div>
+            <h1>Xử lý và phân tích <span class="highlight">dữ liệu định lượng</span></h1>
             <div>
                 <span class="badge">📊 Thống kê mô tả</span>
                 <span class="badge">🔍 Cronbach's Alpha</span>
