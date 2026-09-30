@@ -49,7 +49,6 @@ def render_play_view() -> None:
     theme.inject_css()
     qp = st.query_params
     room_id = qp.get("room")
-    section = qp.get("section")
 
     st.markdown(
         f"""
@@ -72,20 +71,35 @@ def render_play_view() -> None:
 
     player_name = room.get_player(room_id, device_id)
 
-    if not player_name:
+    # Cho phép đổi tên
+    if "rename_mode" not in st.session_state:
+        st.session_state["rename_mode"] = False
+
+    if not player_name or st.session_state["rename_mode"]:
         st.markdown(f"Mã phòng: **{room_id}**")
         with st.form("join_form"):
-            name = st.text_input("Nhập tên của bạn", max_chars=40)
-            submitted = st.form_submit_button("✅ Tham gia")
+            name = st.text_input(
+                "Nhập tên của bạn",
+                value=player_name if st.session_state["rename_mode"] else "",
+                max_chars=40,
+            )
+            submitted = st.form_submit_button("✅ Lưu tên")
             if submitted:
                 if name.strip():
                     room.register_player(room_id, device_id, name)
+                    st.session_state["rename_mode"] = False
                     st.rerun()
                 else:
                     st.warning("Vui lòng nhập tên.")
         return
 
+    section = room.get_current_section(room_id)
+
     st.success(f"Xin chào **{player_name}**! Bạn đang ở phòng `{room_id}`.")
+
+    if st.button("✏️ Đổi tên", key="rename_btn"):
+        st.session_state["rename_mode"] = True
+        st.rerun()
 
     if section:
         questions = room.get_section_questions(room_id, section)

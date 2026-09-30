@@ -1,6 +1,7 @@
 """Lưu trữ dữ liệu trò chơi bằng Google Sheets (qua service account).
 
 Cấu trúc bảng tính (một spreadsheet, nhiều sheet):
+  - rooms:    room_id, current_section
   - players:  room_id, device_id, name, joined_at
   - sections: room_id, section, questions (JSON)
   - answers:  room_id, section, device_id, name, score, total, answered_at
@@ -20,6 +21,7 @@ DEFAULT_SHEET_ID = os.environ.get(
 )
 
 SHEET_HEADERS = {
+    "rooms": ["room_id", "current_section"],
     "players": ["room_id", "device_id", "name", "joined_at"],
     "sections": ["room_id", "section", "questions"],
     "answers": ["room_id", "section", "device_id", "name", "score", "total", "answered_at"],
@@ -159,6 +161,17 @@ def _upsert(sheet_name: str, key_indices: list[int], new_row: list[str]) -> None
 # ---------------------------------------------------------------------------
 # API cho room.py
 # ---------------------------------------------------------------------------
+def set_current_section(room: str, section: str) -> None:
+    _upsert("rooms", [0], [room, section])
+
+
+def get_current_section(room: str) -> str | None:
+    for r in _read_rows("rooms"):
+        if len(r) >= 2 and r[0] == room:
+            return r[1] or None
+    return None
+
+
 def save_section_questions(room: str, section: str, questions: list[dict]) -> None:
     _upsert("sections", [0, 1], [room, section, json.dumps(questions, ensure_ascii=False)])
 
@@ -197,28 +210,55 @@ def save_score(room: str, section: str, device_id: str, name: str, score: int, t
 
 
 def scoreboard(room: str) -> list[dict]:
-    """Tổng điểm theo tên người chơi (giảm dần)."""
+    """Tổng điểm theo thiết bị (device_id), hiển thị tên HIỆN TẠI của người chơi.
+
+    Mỗi thiết bị = 1 người chơi duy nhất, dù có đổi tên vẫn gộp chung điểm.
+    """
+    # Tên hiện tại theo device_id
+    names: dict[str, str] = {}
+    for r in _read_rows("players"):
+        if len(r) >= 3 and r[0] == room:
+            names[r[1]] = r[2]
+
+    # Tổng điểm theo device_id
     agg: dict[str, dict] = {}
     for r in _read_rows("answers"):
         if len(r) < 6 or r[0] != room:
             continue
-        name = r[3] if len(r) > 3 else "Ẩn danh"
+        device = r[2]
         try:
             sc = int(r[4])
             tot = int(r[5])
         except ValueError:
             sc, tot = 0, 0
-        a = agg.setdefault(name, {"name": name, "total_score": 0, "total_questions": 0, "sections_done": 0})
+        a = agg.setdefault(
+            device,
+            {"device_id": device, "total_score": 0, "total_questions": 0, "sections_done": 0},
+        )
         a["total_score"] += sc
         a["total_questions"] += tot
         a["sections_done"] += 1
 
-    # Thêm người chơi đã đăng ký nhưng chưa trả lời
-    for r in _read_rows("players"):
-        if len(r) >= 3 and r[0] == room:
-            agg.setdefault(r[2], {"name": r[2], "total_score": 0, "total_questions": 0, "sections_done": 0})
+    # Thêm thiết bị đã đăng ký nhưng chưa trả lời
+    for device in names:
+        if device not in agg:
+            agg[device] = {
+                "device_id": device,
+                "total_score": 0,
+                "total_questions": 0,
+                "sections_done": 0,
+            }
 
-    board = list(agg.values())
+    board = [
+        {
+            "name": names.get(a["device_id"], "Ẩn danh"),
+            "device_id": a["device_id"],
+            "total_score": a["total_score"],
+            "total_questions": a["total_questions"],
+            "sections_done": a["sections_done"],
+        }
+        for a in agg.values()
+    ]
     board.sort(key=lambda x: (-x["total_score"], -x["total_questions"]))
     return board
 

@@ -109,6 +109,8 @@ def scoreboard_fragment(room_id: str) -> None:
     import pandas as pd
 
     df = pd.DataFrame(board)
+    if "device_id" in df.columns:
+        df = df.drop(columns=["device_id"])
     df = df.rename(
         columns={
             "name": "Người chơi",
@@ -146,18 +148,19 @@ def sidebar_leaderboard(room_id: str) -> None:
 
 
 def render_live_quiz(section_key: str, step_label: str, questions: list[dict], room_id: str) -> None:
-    """Lưu câu hỏi, hiện QR + bảng điểm, và cho phép máy chiếu chơi cùng."""
+    """Lưu câu hỏi, đặt phần hiện tại, hiện QR duy nhất + bảng điểm."""
     if not questions:
         return
     room.save_section_questions(room_id, section_key, questions)
-    url = f"{get_origin()}?view=play&room={room_id}&section={section_key}"
+    room.set_current_section(room_id, section_key)
+    url = f"{get_origin()}?view=play&room={room_id}"
 
     st.markdown("### 📱 Trò chơi tương tác")
     left, right = st.columns([1, 2])
     with left:
         st.markdown(qr.qr_html(url), unsafe_allow_html=True)
         st.caption(f"Mã phòng: **{room_id}**")
-        st.caption(f"Phần: {step_label}")
+        st.caption(f"Phần hiện tại: {step_label}")
     with right:
         st.markdown(
             theme.card(

@@ -51,6 +51,9 @@ def _init_db() -> None:
     con = _conn()
     con.executescript(
         """
+        CREATE TABLE IF NOT EXISTS rooms (
+            room_id TEXT PRIMARY KEY, current_section TEXT
+        );
         CREATE TABLE IF NOT EXISTS sections (
             room_id TEXT, section TEXT, questions TEXT,
             PRIMARY KEY (room_id, section)
@@ -72,6 +75,38 @@ def _init_db() -> None:
 def new_room() -> str:
     """Tạo mã phòng 6 ký tự (không cần lưu trữ)."""
     return secrets.token_hex(3).upper()
+
+
+def set_current_section(room: str, section: str) -> None:
+    if _use_gsheets():
+        try:
+            gsheets.set_current_section(room, section)
+            return
+        except Exception:
+            _mark_broken()
+    _init_db()
+    con = _conn()
+    con.execute(
+        "INSERT OR REPLACE INTO rooms (room_id, current_section) VALUES (?, ?)",
+        (room, section),
+    )
+    con.commit()
+    con.close()
+
+
+def get_current_section(room: str) -> str | None:
+    if _use_gsheets():
+        try:
+            return gsheets.get_current_section(room)
+        except Exception:
+            _mark_broken()
+    _init_db()
+    con = _conn()
+    row = con.execute(
+        "SELECT current_section FROM rooms WHERE room_id = ?", (room,)
+    ).fetchone()
+    con.close()
+    return row["current_section"] if row else None
 
 
 def save_section_questions(room: str, section: str, questions: list[dict]) -> None:
@@ -171,13 +206,14 @@ def scoreboard(room: str) -> list[dict]:
     con = _conn()
     rows = con.execute(
         """
-        SELECT p.name, COALESCE(SUM(a.score), 0) AS total_score,
+        SELECT p.device_id, MAX(p.name) AS name,
+               COALESCE(SUM(a.score), 0) AS total_score,
                COALESCE(SUM(a.total), 0) AS total_questions,
                COUNT(a.section) AS sections_done
         FROM players p
         LEFT JOIN answers a ON p.room_id = a.room_id AND p.device_id = a.device_id
         WHERE p.room_id = ?
-        GROUP BY p.name
+        GROUP BY p.device_id
         ORDER BY total_score DESC, total_questions DESC
         """,
         (room,),

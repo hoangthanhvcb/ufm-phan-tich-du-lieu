@@ -216,9 +216,9 @@ def hero() -> None:
         f"""
         <div class="ufm-hero">
             {logo_html}
-            <h1>Phòng thí nghiệm Phân tích Dữ liệu Định lượng</h1>
+            <h1>Phương pháp nghiên cứu khoa học - Xử lý và phân tích dữ liệu định lượng</h1>
             <div class="sub">
-                Trường Đại học Tài chính – Marketing (UFM) · Phương pháp Nghiên cứu Khoa học
+                Trường Đại học Tài chính – Marketing (UFM)
             </div>
             <div>
                 <span class="badge">📊 Thống kê mô tả</span>
