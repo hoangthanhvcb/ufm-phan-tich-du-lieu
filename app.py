@@ -14,7 +14,6 @@ import tempfile
 from pathlib import Path
 
 import streamlit as st
-import streamlit.components.v1 as components
 
 from src import data_loader as dl
 from src import descriptive as desc
@@ -74,7 +73,8 @@ def reset_room() -> None:
 
 
 DEFAULT_PUBLIC_URL = os.environ.get(
-    "APP_URL", "https://ufm-phan-tich-du-lieu.streamlit.app"
+    "APP_URL",
+    "https://ufm-phan-tich-du-lieu-p2opx2wfjqhmzk4jkaxgap.streamlit.app",
 )
 
 
@@ -95,31 +95,7 @@ def get_origin() -> str:
     env_url = _secret_url()
     if env_url:
         return env_url.rstrip("/")
-    # 3) Tự nhận diện URL trình duyệt
-    script = """
-    <script>
-    (function () {
-      let href = '';
-      try { href = window.parent.location.href; } catch (e) { href = ''; }
-      if (!href) { try { href = window.top.location.href; } catch (e) { href = ''; } }
-      if (!href) { href = document.referrer || ''; }
-      const send = function () {
-        if (window.Streamlit && typeof window.Streamlit.setComponentValue === 'function') {
-          window.Streamlit.setComponentValue(href);
-        } else {
-          setTimeout(send, 60);
-        }
-      };
-      send();
-    })();
-    </script>
-    """
-    href = components.html(script, height=0)
-    if isinstance(href, str) and href.startswith("http"):
-        base = href.split("?")[0].split("#")[0].rstrip("/")
-        st.session_state["origin"] = base
-        return base
-    # 4) Mặc định (URL app đã deploy)
+    # 3) URL app đã deploy
     return DEFAULT_PUBLIC_URL
 
 
