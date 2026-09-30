@@ -108,6 +108,27 @@ def scoreboard_fragment(room_id: str) -> None:
     st.dataframe(df, use_container_width=True, hide_index=True)
 
 
+def sidebar_leaderboard(room_id: str) -> None:
+    """Bảng xếp hạng người chơi trong sidebar (tự sắp xếp điểm cao → thấp, tự làm mới)."""
+    board = room.scoreboard(room_id)
+    count = room.player_count(room_id)
+    st.markdown("### 🏆 Bảng xếp hạng")
+    st.caption(f"{count} người chơi · sắp xếp theo điểm từ cao xuống thấp")
+    if not board:
+        st.caption("Chưa có người chơi. Mời quét mã QR.")
+        return
+    medals = ["🥇", "🥈", "🥉"]
+    for i, r in enumerate(board):
+        medal = medals[i] if i < 3 else f"{i + 1}."
+        st.markdown(
+            f'<div class="ufm-score-row">'
+            f'<span>{medal} {r["name"]}</span>'
+            f'<span><b>{r["total_score"]}</b> điểm</span>'
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+
+
 def render_live_quiz(section_key: str, step_label: str, questions: list[dict], room_id: str) -> None:
     """Lưu câu hỏi, hiện QR + bảng điểm, và cho phép máy chiếu chơi cùng."""
     if not questions:
@@ -339,20 +360,29 @@ STEP_RENDERERS = {
 # Trang người trình bày (wizard)
 # ---------------------------------------------------------------------------
 def presenter_view() -> None:
-    ai_cfg = ai.sidebar_config()
-    game.show_scoreboard()
+    room_id = get_room_id()
 
     with st.sidebar:
+        st.markdown("### 🎮 Bảng điều khiển")
+        # Bảng xếp hạng người chơi (tự làm mới, điểm cao → thấp)
+        st.fragment(sidebar_leaderboard, run_every=5)(room_id)
+
+        st.markdown("---")
         st.markdown("### 🎯 Phòng trò chơi")
-        room_id = get_room_id()
         st.code(room_id)
-        if st.button("🔄 Tạo phòng mới"):
+        if st.button("🔄 Tạo phòng mới", use_container_width=True):
             reset_room()
             st.rerun()
-        origin = get_origin()
-        pub_url = st.text_input("URL công khai cho người tham gia", value=origin)
-        if pub_url and pub_url != origin:
-            st.session_state["origin"] = pub_url.rstrip("/")
+
+        with st.expander("🔗 Cài đặt & AI", expanded=False):
+            origin = get_origin()
+            pub_url = st.text_input("URL công khai cho người tham gia", value=origin)
+            if pub_url and pub_url != origin:
+                st.session_state["origin"] = pub_url.rstrip("/")
+            ai_cfg = ai.sidebar_config()
+
+    if "ai_cfg" not in locals():
+        ai_cfg = {"enabled": False, "api_key": "", "model": "gemini-2.0-flash"}
 
     stage = st.session_state.get("stage", "landing")
 

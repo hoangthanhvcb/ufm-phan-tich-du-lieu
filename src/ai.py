@@ -14,14 +14,12 @@ DEFAULT_MODEL = "gemini-2.0-flash"
 # Cấu hình ở sidebar
 # ---------------------------------------------------------------------------
 def sidebar_config() -> dict:
-    """Hiển thị cấu hình AI ở sidebar, trả về {enabled, api_key, model}."""
-    st.sidebar.markdown("---")
-    st.sidebar.subheader("🤖 Trợ lý AI (Gemini)")
-    enabled = st.sidebar.checkbox("Bật AI để sinh câu hỏi & gợi ý", value=False)
-    api_key = st.sidebar.text_input("Gemini API key", type="password")
-    model = st.sidebar.text_input("Tên model", value=DEFAULT_MODEL)
+    """Hiển thị cấu hình AI (đặt trong container hiện tại, ví dụ sidebar expander)."""
+    enabled = st.checkbox("Bật AI để sinh câu hỏi & gợi ý", value=False)
+    api_key = st.text_input("Gemini API key", type="password")
+    model = st.text_input("Tên model", value=DEFAULT_MODEL)
     if enabled and not api_key:
-        st.sidebar.caption("Nhập API key từ Google AI Studio (https://aistudio.google.com).")
+        st.caption("Nhập API key từ Google AI Studio (https://aistudio.google.com).")
     return {"enabled": enabled and bool(api_key), "api_key": api_key, "model": model or DEFAULT_MODEL}
 
 
