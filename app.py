@@ -76,10 +76,26 @@ def reset_room() -> None:
 def get_origin() -> str:
     if "origin" in st.session_state and st.session_state["origin"]:
         return st.session_state["origin"]
-    href = components.html(
-        "<script>Streamlit.setComponentValue(window.location.href);</script>", height=0
-    )
-    if isinstance(href, str) and href:
+    script = """
+    <script>
+    (function () {
+      let href = '';
+      try { href = window.parent.location.href; } catch (e) { href = ''; }
+      if (!href) { try { href = window.top.location.href; } catch (e) { href = ''; } }
+      if (!href) { href = document.referrer || ''; }
+      const send = function () {
+        if (window.Streamlit && typeof window.Streamlit.setComponentValue === 'function') {
+          window.Streamlit.setComponentValue(href);
+        } else {
+          setTimeout(send, 60);
+        }
+      };
+      send();
+    })();
+    </script>
+    """
+    href = components.html(script, height=0)
+    if isinstance(href, str) and href.startswith("http"):
         base = href.split("?")[0].split("#")[0].rstrip("/")
         st.session_state["origin"] = base
         return base
