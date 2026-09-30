@@ -14,6 +14,7 @@ import tempfile
 from pathlib import Path
 
 import streamlit as st
+import streamlit.components.v1 as components
 
 from src import data_loader as dl
 from src import descriptive as desc
@@ -80,8 +81,6 @@ DEFAULT_PUBLIC_URL = os.environ.get(
 
 def _secret_url() -> str:
     try:
-        import streamlit as st
-
         return st.secrets.get("APP_URL") or os.environ.get("APP_URL") or ""
     except Exception:
         return os.environ.get("APP_URL") or ""
@@ -379,6 +378,8 @@ STEP_RENDERERS = {
 def presenter_view() -> None:
     room_id = get_room_id()
     ai_cfg = ai.get_config()
+    stage = st.session_state.get("stage", "landing")
+    step_idx = st.session_state.get("step_idx", 0)
 
     with st.sidebar:
         st.markdown("### 🎮 Bảng điều khiển")
@@ -388,17 +389,36 @@ def presenter_view() -> None:
         # Trạng thái kết nối AI
         ai.render_status(ai_cfg)
 
+        # Slicer chọn phần phân tích
+        if stage == "steps":
+            st.markdown("---")
+            st.markdown("### 🧭 Slicer phân tích")
+            choice = st.selectbox(
+                "Chuyển đến phần",
+                list(range(len(STEPS))),
+                format_func=lambda i: f"{STEPS[i][2]}. {STEPS[i][1]}",
+                index=step_idx,
+            )
+            if choice != step_idx:
+                st.session_state["step_idx"] = choice
+                st.rerun()
+
         with st.expander("🔗 Cài đặt", expanded=False):
             origin = get_origin()
             pub_url = st.text_input("URL công khai cho người tham gia", value=origin)
             if pub_url and pub_url != origin:
                 st.session_state["origin"] = pub_url.rstrip("/")
 
-    stage = st.session_state.get("stage", "landing")
-
     if stage == "landing":
         theme.hero()
         st.markdown(theme.card("Hướng dẫn", "Tải lên bộ dữ liệu đã làm sạch, kiểm tra chất lượng, rồi đi qua từng bước phân tích. Ở mỗi bước có trò chơi QR để cả lớp cùng tham gia."), unsafe_allow_html=True)
+
+        # Slide hướng dẫn (Canva)
+        with st.expander("📖 Xem slide hướng dẫn (Canva)", expanded=False):
+            components.iframe(
+                "https://www.canva.com/design/DAHWBaLveP8/view?embed",
+                height=480,
+            )
 
         # Mời tham gia bằng QR
         st.markdown("### 🎮 Mời các bạn tham gia trò chơi")
@@ -533,6 +553,20 @@ def presenter_view() -> None:
         ai.render_ai_enhancements(step_label, ctx, section_key, ai_cfg)
 
         st.markdown("---")
+        st.markdown("### 🧭 Điều hướng 5 phần phân tích")
+        cols = st.columns(len(STEPS))
+        for i in range(len(STEPS)):
+            if cols[i].button(
+                str(i + 1),
+                key=f"nav_{i}",
+                use_container_width=True,
+                disabled=(i == step_idx),
+                help=STEPS[i][1],
+            ):
+                st.session_state["step_idx"] = i
+                st.rerun()
+        st.caption(f"Phần hiện tại: **{step_no}. {step_label}**")
+
         c_left, c_right = st.columns(2)
         if step_idx > 0 and c_left.button("⬅️ Quay lại", key="prev_btn", use_container_width=True):
             st.session_state["step_idx"] = step_idx - 1
