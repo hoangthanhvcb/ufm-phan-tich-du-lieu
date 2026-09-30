@@ -42,17 +42,18 @@ header[data-testid="stHeader"] {{
   background: rgba(10, 77, 140, 0.02);
 }}
 
-/* Sidebar */
+/* Sidebar (nền sáng để bảng xếp hạng dễ đọc) */
 section[data-testid="stSidebar"] {{
-  background: linear-gradient(180deg, {BLUE_DARK} 0%, {BLUE_DEEP} 100%);
+  background: #f5f9ff;
+  border-right: 1px solid #e3edf7;
 }}
 section[data-testid="stSidebar"] * {{
-  color: #ffffff;
+  color: {BLUE_DARK};
 }}
 section[data-testid="stSidebar"] .stButton > button {{
-  background: rgba(255,255,255,0.12);
-  color: #ffffff;
-  border: 1px solid rgba(255,255,255,0.3);
+  background: #ffffff;
+  color: {BLUE};
+  border: 1px solid {BLUE};
 }}
 
 /* Nút bấm chính */
@@ -293,12 +294,16 @@ def card(title: str, body: str) -> str:
 
 
 def leaderboard_html(board: list[dict]) -> str:
-    """Sinh HTML bảng xếp hạng: top 3 nổi bật, danh sách cuộn khi đông người."""
+    """Sinh HTML bảng xếp hạng: top 3 (đã trả lời) nổi bật, chưa chơi xếp cuối không huy chương."""
     if not board:
         return '<div class="leaderboard" style="color:#5B6B7C;">Chưa có người chơi.</div>'
+
+    played = [r for r in board if r.get("sections_done", 0) > 0]
+    not_played = [r for r in board if r.get("sections_done", 0) == 0]
+
     rows = []
     medals = ["🥇", "🥈", "🥉"]
-    for i, r in enumerate(board):
+    for i, r in enumerate(played):
         cls = "leaderboard-row"
         if i == 0:
             cls += " leaderboard-top1"
@@ -315,6 +320,17 @@ def leaderboard_html(board: list[dict]) -> str:
             f'<span class="lscore">{r["total_score"]} điểm</span>'
             f"</div>"
         )
+
+    # Người chơi chưa trả lời (0 điểm) - không xếp hạng
+    for r in not_played:
+        rows.append(
+            f'<div class="leaderboard-row" style="opacity:0.65;">'
+            f'<span class="rank" style="color:#9aa7b4;">–</span>'
+            f'<span class="lname">{r["name"]}</span>'
+            f'<span class="lscore" style="background:#f1f4f7;color:#7a8ca0;">0 điểm</span>'
+            f"</div>"
+        )
+
     return '<div class="leaderboard">' + "".join(rows) + "</div>"
 
 

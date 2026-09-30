@@ -34,32 +34,48 @@ _DEVICE_SCRIPT = """
 """
 
 
-def get_device_id() -> str:
-    """Lấy/cấp mã thiết bị.
+def _client_fingerprint() -> str:
+    """Định danh thiết bị ổn định theo IP + User-Agent (phía server).
 
-    Ưu tiên localStorage (giữ ổn định khi quét QR nhiều lần trên cùng thiết bị);
-    nếu chưa có thì cấp id tạm (Python UUID) để biểu mẫu nhập tên luôn hiển thị.
+    Khi cùng một thiết bị quét lại nhiều lần, IP và User-Agent không đổi
+    nên id vẫn giữ nguyên (đổi tên cũng không tạo người mới).
     """
+    import hashlib
+
+    try:
+        ip = st.context.ip_address or ""
+    except Exception:
+        ip = ""
+    try:
+        ua = st.context.headers.get("User-Agent") or ""
+    except Exception:
+        ua = ""
+    if not ip and not ua:
+        return ""
+    return "fp-" + hashlib.md5(f"{ip}|{ua}".encode("utf-8")).hexdigest()[:20]
+
+
+def get_device_id() -> str:
+    """Lấy/cấp mã thiết bị ổn định khi quét lại nhiều lần."""
     import uuid
 
-    # Đã xác định id từ localStorage
-    if st.session_state.get("_device_confirmed"):
-        return st.session_state["_device_confirmed"]
+    # 1) Fingerprint server-side (IP + User-Agent) - ổn định nhất
+    fp = _client_fingerprint()
+    if fp:
+        return fp
 
-    # Id tạm theo phiên (đảm bảo luôn có id, không bị treo)
-    if "device_id" not in st.session_state:
-        st.session_state["device_id"] = "dev-" + uuid.uuid4().hex[:16]
-    tmp = st.session_state["device_id"]
-
-    # Thử đọc localStorage (best-effort)
+    # 2) Fallback: localStorage (best-effort)
     try:
         stored = components.html(_DEVICE_SCRIPT, height=0)
     except Exception:
         stored = None
     if isinstance(stored, str) and stored:
-        st.session_state["_device_confirmed"] = stored
         return stored
-    return tmp
+
+    # 3) Fallback cuối: id theo phiên
+    if "device_id" not in st.session_state:
+        st.session_state["device_id"] = "dev-" + uuid.uuid4().hex[:16]
+    return st.session_state["device_id"]
 
 
 def render_play_view() -> None:
