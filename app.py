@@ -367,13 +367,6 @@ def presenter_view() -> None:
         # Bảng xếp hạng người chơi (tự làm mới, điểm cao → thấp)
         st.fragment(sidebar_leaderboard, run_every=5)(room_id)
 
-        st.markdown("---")
-        st.markdown("### 🎯 Phòng trò chơi")
-        st.code(room_id)
-        if st.button("🔄 Tạo phòng mới", use_container_width=True):
-            reset_room()
-            st.rerun()
-
         with st.expander("🔗 Cài đặt & AI", expanded=False):
             origin = get_origin()
             pub_url = st.text_input("URL công khai cho người tham gia", value=origin)

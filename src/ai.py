@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import urllib.request
 
@@ -10,17 +11,35 @@ import streamlit as st
 DEFAULT_MODEL = "gemini-2.0-flash"
 
 
+def _default_api_key() -> str:
+    """Lấy API key từ Streamlit secrets hoặc biến môi trường (kết nối sẵn)."""
+    try:
+        import streamlit as st
+
+        return st.secrets.get("GEMINI_API_KEY") or os.environ.get("GEMINI_API_KEY") or ""
+    except Exception:
+        return os.environ.get("GEMINI_API_KEY") or ""
+
+
 # ---------------------------------------------------------------------------
 # Cấu hình ở sidebar
 # ---------------------------------------------------------------------------
 def sidebar_config() -> dict:
-    """Hiển thị cấu hình AI (đặt trong container hiện tại, ví dụ sidebar expander)."""
-    enabled = st.checkbox("Bật AI để sinh câu hỏi & gợi ý", value=False)
-    api_key = st.text_input("Gemini API key", type="password")
+    """Hiển thị cấu hình AI (đặt trong container hiện tại, ví dụ sidebar expander).
+
+    Nếu đã có API key trong secrets/môi trường thì tự điền và tự bật sẵn.
+    """
+    default_key = _default_api_key()
+    enabled = st.checkbox("Bật AI để sinh câu hỏi & gợi ý", value=bool(default_key))
+    api_key = st.text_input("Gemini API key", value=default_key, type="password")
     model = st.text_input("Tên model", value=DEFAULT_MODEL)
     if enabled and not api_key:
         st.caption("Nhập API key từ Google AI Studio (https://aistudio.google.com).")
-    return {"enabled": enabled and bool(api_key), "api_key": api_key, "model": model or DEFAULT_MODEL}
+    return {
+        "enabled": enabled and bool(api_key),
+        "api_key": api_key or default_key,
+        "model": model or DEFAULT_MODEL,
+    }
 
 
 def _call_gemini(api_key: str, prompt: str, model: str) -> str:
