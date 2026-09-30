@@ -123,7 +123,7 @@ def sidebar_leaderboard(room_id: str) -> None:
 
 
 def render_live_quiz(section_key: str, step_label: str, questions: list[dict], room_id: str) -> None:
-    """Lưu câu hỏi, đặt phần hiện tại, hiện QR duy nhất + bảng điểm."""
+    """Lưu câu hỏi, đặt phần hiện tại, hiện QR duy nhất + bảng điểm (câu hỏi hiện trên điện thoại)."""
     if not questions:
         return
     room.save_section_questions(room_id, section_key, questions)
@@ -141,23 +141,13 @@ def render_live_quiz(section_key: str, step_label: str, questions: list[dict], r
             theme.card(
                 "Cách tham gia",
                 "1. Quét mã QR bằng điện thoại.\n2. Nhập tên để tham gia.\n"
-                "3. Trả lời câu hỏi — điểm cộng dồn qua từng phần.",
-            ),
-            unsafe_allow_html=True,
-        )
-        st.markdown(
-            theme.card(
-                "Câu hỏi trên màn hình",
-                "Các câu hỏi bên dưới cũng hiển thị trên điện thoại người chơi.",
+                "3. Câu hỏi và đáp án hiển thị trên điện thoại — trả lời và tính điểm cộng dồn.",
             ),
             unsafe_allow_html=True,
         )
 
     # Bảng điểm tự làm mới
     st.fragment(scoreboard_fragment, run_every=5)(room_id)
-
-    # Máy chiếu cũng có thể trả lời (điểm riêng)
-    game.render_quiz(step_label, questions, f"quiz_{section_key}")
 
 
 # ---------------------------------------------------------------------------
@@ -193,6 +183,11 @@ def step_descriptive(df, summary) -> tuple[list[dict], str]:
     ctx = "Thống kê mô tả:\n" + (numeric_desc.to_string() if numeric_desc is not None else "")
     if cat_freq is not None:
         ctx += f"\n\nTần suất '{chosen_cat}':\n" + cat_freq.to_string()
+    ctx += (
+        f"\n\nBiến định lượng đã chọn: {', '.join(chosen_num) if num_cols and chosen_num else 'chưa chọn'}"
+        f"\nTất cả biến định lượng trong dữ liệu: {', '.join(summary['numeric_cols']) or 'không có'}"
+        f"\nBiến phân loại trong dữ liệu: {', '.join(summary['categorical_cols']) or 'không có'}"
+    )
     return data_qs, ctx
 
 
@@ -271,6 +266,7 @@ def step_efa(df, summary) -> tuple[list[dict], str, bool]:
     ctx = (
         f"KMO = {kmo['kmo']:.4f}, Bartlett p = {kmo['bartlett_p']:.4f}\n"
         f"Số nhân tố = {n_factors}, xoay = {rotation}\n"
+        f"Biến quan sát: {', '.join(efa_cols)}\n"
         + result["variance_table"].to_string() + "\n" + result["loadings"].to_string()
     )
     return data_qs, ctx, True
@@ -297,7 +293,11 @@ def step_correlation(df, summary) -> tuple[list[dict], str, bool]:
     st.markdown("**Giải thích:** " + interpretation.interpret_correlation(pairs))
 
     data_qs = game.questions_correlation(pairs)
-    ctx = "Ma trận tương quan:\n" + corr_mat.to_string()
+    ctx = (
+        "Ma trận tương quan:\n"
+        + corr_mat.to_string()
+        + f"\n\nBiến phân tích: {', '.join(corr_cols)}"
+    )
     return data_qs, ctx, True
 
 
@@ -334,7 +334,9 @@ def step_regression(df, summary) -> tuple[list[dict], str, bool]:
 
     data_qs = game.questions_regression(fit)
     ctx = (
-        regression.model_equation(fit)
+        f"Biến phụ thuộc (Y) = {dep_var}\n"
+        f"Biến độc lập (X) = {', '.join(indep_vars)}\n"
+        + regression.model_equation(fit)
         + f"\nR² = {fit['r2']:.4f}, Adjusted R² = {fit['adj_r2']:.4f}, F = {fit['f_stat']:.2f}, p = {fit['f_pvalue']:.4f}\n"
         + fit["coefficients"].to_string() + "\nVIF:\n" + fit["vif"].to_string()
     )
@@ -628,22 +630,15 @@ def presenter_view() -> None:
         if ready:
             render_live_quiz(section_key, step_label, questions, get_room_id())
 
-        ai.render_ai_enhancements(step_label, ctx, section_key, ai_cfg)
-
-        st.markdown("---")
-        st.markdown("### 🧭 Điều hướng 5 phần phân tích")
-        cols = st.columns(len(STEPS))
-        for i in range(len(STEPS)):
-            if cols[i].button(
-                str(i + 1),
-                key=f"nav_{i}",
-                use_container_width=True,
-                disabled=(i == step_idx),
-                help=STEPS[i][1],
-            ):
-                st.session_state["step_idx"] = i
-                st.rerun()
-        st.caption(f"Phần hiện tại: **{step_no}. {step_label}** · Dùng nút Lùi/Tiếp ở trên để qua lại")
+        code_ctx = (
+            f"TÊN FILE DỮ LIỆU: {st.session_state.get('filename', 'data.csv')}\n"
+            f"Số dòng: {len(df)}, số cột: {df.shape[1]}\n"
+            f"Tất cả biến trong dữ liệu: {', '.join(df.columns)}\n"
+            f"Biến định lượng: {', '.join(summary['numeric_cols']) or 'không có'}\n"
+            f"Biến phân loại: {', '.join(summary['categorical_cols']) or 'không có'}\n\n"
+            f"KẾT QUẢ BƯỚC '{step_label}':\n{ctx}"
+        )
+        ai.render_ai_enhancements(step_label, code_ctx, section_key, ai_cfg)
         return
 
     if stage == "done":

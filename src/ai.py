@@ -230,60 +230,67 @@ def analyze_data_quality(context: str, api_key: str, model: str, provider: str =
     return _call_llm(provider, api_key, prompt, model)
 
 
+def generate_code(step_name: str, context: str, api_key: str, model: str, provider: str = "gemini") -> str:
+    """Yêu cầu AI sinh đoạn code Python và R cho bước phân tích hiện tại."""
+    prompt = (
+        "Bạn là chuyên gia phân tích dữ liệu định lượng và lập trình thống kê.\n"
+        f"Hãy viết code tương ứng cho bước phân tích: '{step_name}'.\n\n"
+        "YÊU CẦU BẮT BUỘC:\n"
+        "1. Trả lời đúng 2 phần theo mẫu sau, không thêm phần khác:\n"
+        "## Python\n```python\n<code>\n```\n\n## R\n```r\n<code>\n```\n"
+        "2. Code phải CHẠY ĐƯỢC ĐỘC LẬP: tự đọc file dữ liệu, không cần biến ngoài.\n"
+        "3. Dùng ĐÚNG tên cột được cung cấp, không tự đặt tên biến giả.\n"
+        "4. Python: dùng pandas/numpy/scipy/statsmodels/sklearn/factor_analyzer. "
+        "R: dùng psych/corrplot/stats/e1071/factoextra.\n"
+        "5. Comment trong code bằng tiếng Việt, ngắn gọn.\n"
+        "6. In kết quả bằng print()/cat() để người dùng kiểm tra.\n\n"
+        f"THÔNG TIN DỮ LIỆU VÀ KẾT QUẢ BƯỚC '{step_name}':\n{context}"
+    )
+    return _call_llm(provider, api_key, prompt, model)
+
+
 # ---------------------------------------------------------------------------
 # Khối giao diện AI nhúng vào từng bước
 # ---------------------------------------------------------------------------
+def _extract_code_block(text: str, lang: str) -> str:
+    m = re.search(rf"```{lang}\s*\n(.*?)```", text, re.DOTALL)
+    return m.group(1).strip() if m else ""
+
+
 def render_ai_enhancements(step_name: str, context: str, key_prefix: str, cfg: dict) -> None:
-    """Hiển thị nút sinh câu hỏi + gợi ý bằng AI cho một bước."""
+    """Sinh đoạn code Python và R để sinh viên tự chạy lại độc lập."""
     if not cfg.get("enabled"):
         return
 
     st.markdown("---")
-    st.markdown("### 🤖 Trợ lý AI")
-    col_q, col_s = st.columns(2)
+    st.markdown("### 🤖 Trợ lý AI — sinh code Python & R")
+    st.caption("Tạo code tương ứng với bước phân tích này để bạn tự chạy lại trên Python hoặc R.")
 
-    q_key = f"{key_prefix}_ai_questions"
-    s_key = f"{key_prefix}_ai_suggestions"
+    s_key = f"{key_prefix}_ai_code"
+    if st.button("💻 Sinh code Python & R", key=f"{key_prefix}_btn_code", type="primary"):
+        with st.spinner("AI đang sinh code..."):
+            try:
+                st.session_state[s_key] = generate_code(
+                    step_name, context, cfg["api_key"], cfg["model"], cfg.get("provider", "gemini")
+                )
+            except Exception as e:  # noqa: BLE001
+                st.error(f"Lỗi khi gọi AI: {e}")
 
-    with col_q:
-        if st.button("✨ Sinh câu hỏi bằng AI", key=f"{key_prefix}_btn_q"):
-            with st.spinner("AI đang sinh câu hỏi..."):
-                try:
-                    qs = generate_quiz_questions(
-                        step_name, context, cfg["api_key"], cfg["model"], cfg.get("provider", "gemini")
-                    )
-                    if qs:
-                        st.session_state[q_key] = qs
-                        st.success(f"Đã sinh {len(qs)} câu hỏi.")
-                    else:
-                        st.warning("AI không sinh được câu hỏi hợp lệ.")
-                except Exception as e:  # noqa: BLE001
-                    st.error(f"Lỗi khi gọi AI: {e}")
-
-        if q_key in st.session_state:
-            from src import game
-
-            game.render_quiz(
-                f"{step_name} (AI)",
-                st.session_state[q_key],
-                f"{q_key}_quiz",
-            )
-
-    with col_s:
-        if st.button("💡 Gợi ý cải thiện bằng AI", key=f"{key_prefix}_btn_s"):
-            with st.spinner("AI đang phân tích..."):
-                try:
-                    sugg = generate_suggestions(
-                        step_name, context, cfg["api_key"], cfg["model"], cfg.get("provider", "gemini")
-                    )
-                    st.session_state[s_key] = sugg
-                except Exception as e:  # noqa: BLE001
-                    st.error(f"Lỗi khi gọi AI: {e}")
-
-        if s_key in st.session_state:
-            sugg = st.session_state[s_key]
-            if sugg:
-                for s in sugg:
-                    st.markdown(f"- {s}")
-            else:
-                st.info("AI không trả về gợi ý nào.")
+    if s_key in st.session_state:
+        code = st.session_state[s_key]
+        py = _extract_code_block(code, "python")
+        rr = _extract_code_block(code, "r")
+        if py or rr:
+            t_py, t_r = st.tabs(["🐍 Python", "📊 R"])
+            with t_py:
+                if py:
+                    st.code(py, language="python")
+                else:
+                    st.info("AI không trả về code Python.")
+            with t_r:
+                if rr:
+                    st.code(rr, language="r")
+                else:
+                    st.info("AI không trả về code R.")
+        else:
+            st.markdown(code)
