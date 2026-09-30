@@ -14,7 +14,10 @@ from pathlib import Path
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 
 # ID bảng tính (điền qua biến môi trường hoặc Streamlit secrets).
-DEFAULT_SHEET_ID = os.environ.get("GOOGLE_SHEET_ID", "")
+DEFAULT_SHEET_ID = os.environ.get(
+    "GOOGLE_SHEET_ID",
+    "17CxDL1RRJqMNphS4zEel0O161tAcAleiY8McdLviTok",
+)
 
 SHEET_HEADERS = {
     "players": ["room_id", "device_id", "name", "joined_at"],

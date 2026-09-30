@@ -6,3 +6,4 @@ room_id.txt
 service_account.json
 packages/
 .DS_Store
+.streamlit/secrets.toml
