@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+.env
+ufm_game.db
+room_id.txt
+service_account.json
+packages/
+.DS_Store
