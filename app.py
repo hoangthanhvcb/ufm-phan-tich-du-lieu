@@ -117,26 +117,42 @@ def sidebar_leaderboard(room_id: str) -> None:
 # ---------------------------------------------------------------------------
 # Menu trái · Thanh top · Nút điều hướng nổi
 # ---------------------------------------------------------------------------
+def _run_ai_check(ai_cfg: dict) -> None:
+    """Gọi thật API kiểm tra rồi lưu kết quả (chỉ Công / Thất bại)."""
+    with st.spinner("Đang kiểm tra..."):
+        st.session_state["ai_check"] = ai.test_connection(ai_cfg)
+
+
 def _render_ai_status(ai_cfg: dict) -> None:
-    """Chấm tròn trạng thái AI ở cuối sidebar + nút kiểm tra kết nối thật."""
-    provider = "OpenRouter" if ai_cfg.get("provider") == "openrouter" else "Google Gemini"
+    """Dòng trạng thái AI ở đáy sidebar. BẤM VÀO để kiểm tra lại kết nối."""
     if not ai_cfg.get("enabled"):
-        theme.ai_status_dot(False, "AI chưa kết nối")
+        st.markdown(
+            '<div class="ufm-ai-status"><span class="ufm-dot off"></span>'
+            "<span>AI chưa kết nối</span></div>",
+            unsafe_allow_html=True,
+        )
         return
 
     state = st.session_state.get("ai_check")  # None | (bool, msg)
     model = ai_cfg.get("model", "")
     if state is None:
-        theme.ai_status_dot(False, f"AI · {model}", pending=True)
+        cls, mark = "wait", "Chưa kiểm tra"
     elif state[0]:
-        theme.ai_status_dot(True, f"AI · {model}")
+        cls, mark = "on", "Đã kết nối"
     else:
-        theme.ai_status_dot(False, f"AI · {model}")
+        cls, mark = "off", "Thất bại"
 
-    if st.button("🔌 Kiểm tra kết nối AI", key="ai_check_btn", use_container_width=True):
-        with st.spinner("Đang kiểm tra..."):
-            st.session_state["ai_check"] = ai.test_connection(ai_cfg)
-        st.rerun()
+    # Dòng trạng thái có chấm màu; nút trong suốt phủ kín để bấm là kiểm tra lại
+    with st.container(key="ufm_ai_status_btn"):
+        st.markdown(
+            f'<div class="ufm-ai-status"><span class="ufm-dot {cls}"></span>'
+            f"<span>AI · {model}</span></div>"
+            f'<div class="ufm-ai-note">{mark} · bấm để kiểm tra lại</div>',
+            unsafe_allow_html=True,
+        )
+        if st.button("Kiểm tra lại kết nối AI", key="ai_status_click"):
+            _run_ai_check(ai_cfg)
+            st.rerun()
 
     if state is not None:
         if state[0]:
@@ -146,7 +162,7 @@ def _render_ai_status(ai_cfg: dict) -> None:
 
 
 def render_sidebar_menu(current: str, stage: str, step_idx: int, room_id: str, ai_cfg: dict) -> None:
-    """Sidebar chỉ còn: Xếp hạng · Reset · Trạng thái AI.
+    """Sidebar chỉ còn: Xếp hạng · Đang xem · (đáy) Reset · Trạng thái AI.
     Điều hướng 6 phần nằm ở thanh trên cùng."""
     with st.sidebar:
         # 1) Xếp hạng luôn nằm trên cùng
@@ -162,15 +178,16 @@ def render_sidebar_menu(current: str, stage: str, step_idx: int, room_id: str, a
                 unsafe_allow_html=True,
             )
 
+        # 3) Đẩy Reset + AI xuống đáy thanh menu
+        st.markdown('<div style="flex:1;min-height:1.2rem"></div>', unsafe_allow_html=True)
         st.markdown("---")
+
         if st.button("🔄 Reset toàn bộ", key="reset_all_btn", use_container_width=True):
             room.reset_all()
             for k in list(st.session_state.keys()):
                 del st.session_state[k]
             st.rerun()
 
-        # 3) Mô hình AI nằm cuối cùng
-        st.markdown('<div style="height:0.3rem"></div>', unsafe_allow_html=True)
         _render_ai_status(ai_cfg)
 
 
@@ -269,7 +286,10 @@ def render_live_quiz(section_key: str, label: str, questions: list[dict], room_i
                 "1. Quét mã QR bằng điện thoại.\n"
                 "2. Nhập tên để tham gia.\n"
                 f"3. Bấm **Play** để mở {quiz.MAX_QUESTIONS} câu hỏi — mỗi câu có "
-                f"{quiz.PER_QUESTION_SECONDS} giây, hiển thị đồng thời trên web và điện thoại.",
+                f"{quiz.PER_QUESTION_SECONDS} giây, hiển thị đồng thời trên web và điện thoại.\n"
+                f"4. **Cách tính điểm:** trả lời đúng +{quiz.POINTS_CORRECT} điểm, cộng thêm tối đa "
+                f"+{quiz.SPEED_BONUS_MAX} điểm thưởng tốc độ — nộp càng nhanh càng nhiều điểm. "
+                "Trả lời sai không được điểm.",
             ),
             unsafe_allow_html=True,
         )

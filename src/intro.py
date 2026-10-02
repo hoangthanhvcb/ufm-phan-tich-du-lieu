@@ -14,6 +14,11 @@ INTRO_CSS = """
 @keyframes ufmBlink { 0%,49% { opacity:1; } 50%,100% { opacity:0.18; } }
 @keyframes ufmFloat { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-7px); } }
 @keyframes ufmIn { 0% { opacity:0; transform: translateY(14px); } 100% { opacity:1; transform: translateY(0); } }
+@keyframes ufmShine { 0% { left: -55%; } 55%, 100% { left: 130%; } }
+@keyframes ufmBtnPulse {
+  0%, 100% { box-shadow: 0 0 0 1px rgba(111,216,255,0.35), 0 0 26px rgba(63,169,245,0.45), 0 14px 40px rgba(0,0,0,0.5); }
+  50% { box-shadow: 0 0 0 1px rgba(111,216,255,0.75), 0 0 46px rgba(87,208,255,0.85), 0 14px 44px rgba(0,0,0,0.55); }
+}
 
 .st-key-ufm_intro { padding: 0 0 1rem; }
 
@@ -139,26 +144,51 @@ INTRO_CSS = """
   margin: 1.6rem 0 0.2rem 0;
   animation: ufmIn 1s 0.5s both;
 }
-/* nút Chào mừng: viền góc cạnh */
+/* nút Chào mừng: khung góc cạnh + ánh sáng quét + viền phát sáng */
+.st-key-ufm_intro_btn { margin-top: 1.4rem; }
 .st-key-ufm_intro_btn button {
+  position: relative;
+  overflow: hidden;
   width: 100%;
-  margin-top: 1.1rem;
-  padding: 0.85rem 1rem;
-  font-size: 1.16rem !important;
-  font-weight: 800 !important;
-  letter-spacing: 0.12em;
-  color: #04101E !important;
-  background: linear-gradient(135deg, #57D0FF, #3FA9F5) !important;
-  border: none !important;
+  padding: 1.15rem 1.2rem;
+  font-size: 1.34rem !important;
+  font-weight: 900 !important;
+  letter-spacing: 0.2em;
+  color: #F3FBFF !important;
+  background: linear-gradient(120deg, #0B3D6B 0%, #1276C4 42%, #0B3D6B 100%) !important;
+  background-size: 220% 100% !important;
+  border: 2px solid #6FD8FF !important;
   border-radius: 0 !important;
-  clip-path: polygon(16px 0, 100% 0, 100% calc(100% - 16px), calc(100% - 16px) 100%, 0 100%, 0 16px);
-  box-shadow: 0 10px 30px rgba(63,169,245,0.38) !important;
-  transition: transform .16s ease, box-shadow .16s ease;
+  clip-path: polygon(20px 0, 100% 0, 100% calc(100% - 20px), calc(100% - 20px) 100%, 0 100%, 0 20px);
+  box-shadow:
+    0 0 0 1px rgba(111,216,255,0.35),
+    0 0 26px rgba(63,169,245,0.45),
+    0 14px 40px rgba(0,0,0,0.5) !important;
+  text-shadow: 0 0 18px rgba(150,225,255,0.75);
+  animation: ufmBtnPulse 2.8s ease-in-out infinite;
+  transition: transform .18s ease, box-shadow .18s ease;
+}
+/* vệt sáng chạy ngang qua nút */
+.st-key-ufm_intro_btn button::after {
+  content: "";
+  position: absolute;
+  top: -40%; bottom: -40%;
+  left: -55%;
+  width: 42%;
+  background: linear-gradient(100deg, transparent, rgba(255,255,255,0.55), transparent);
+  transform: skewX(-18deg);
+  animation: ufmShine 3.4s ease-in-out infinite;
 }
 .st-key-ufm_intro_btn button:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 14px 38px rgba(63,169,245,0.52) !important;
+  transform: translateY(-3px);
+  background-position: 100% 0 !important;
+  box-shadow:
+    0 0 0 1px rgba(111,216,255,0.6),
+    0 0 44px rgba(87,208,255,0.75),
+    0 18px 48px rgba(0,0,0,0.55) !important;
+  animation-play-state: paused;
 }
+.st-key-ufm_intro_btn button:active { transform: translateY(0) scale(0.995); }
 </style>
 """
 

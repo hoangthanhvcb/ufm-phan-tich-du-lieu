@@ -196,9 +196,10 @@ def _live_section(room_id: str, device_id: str, player_name: str) -> None:
             disabled=already_sent,
         )
     answer = options.index(picked) if picked in options else -1
+    last = st.session_state.get(f"pts_{choice_key}")
 
     if already_sent:
-        st.success("✅ Đã nộp đáp án. Chờ câu tiếp theo…")
+        _show_answer_feedback(last)
         _show_my_scoreboard(room_id, device_id)
         return
 
@@ -208,8 +209,23 @@ def _live_section(room_id: str, device_id: str, player_name: str) -> None:
         use_container_width=True,
         type="primary",
     ):
-        _record_answer(room_id, section, state, answer, device_id, player_name)
+        last = _record_answer(room_id, section, state, answer, device_id, player_name)
+        st.session_state[f"pts_{choice_key}"] = last
         st.session_state[submitted_key] = True
+
+
+def _show_answer_feedback(last: dict | None) -> None:
+    """Phản hồi ngay sau khi nộp: đúng/sai + số điểm có tính thời gian nộp."""
+    if not last:
+        st.info("⏳ Câu này đã hết giờ — không tính điểm.")
+        return
+    if last["correct"]:
+        st.success(
+            f"✅ **Chính xác!** +**{last['points']}** điểm "
+            f"(còn {last['remaining']:.0f}s · thưởng tốc độ +{last['speed']})"
+        )
+    else:
+        st.error("❌ Sai rồi. Đáp án đúng: **" + str(last["expected"]) + "**")
 
 
 def _record_answer(
@@ -219,14 +235,35 @@ def _record_answer(
     answer: int,
     device_id: str,
     player_name: str,
-) -> None:
-    """Lưu đáp án của câu hiện tại và cộng điểm nếu đúng."""
+) -> dict:
+    """Chấm câu hiện tại. Điểm = đúng/sai + thưởng tốc độ theo thời gian còn lại
+    (đo bằng đồng hồ chung của server, không tin đồng hồ của thiết bị)."""
     key = f"score_{room_id}_{section}"
+    ck = f"correct_{room_id}_{section}"
     score = st.session_state.get(key, 0)
+    correct = st.session_state.get(ck, 0)
     q = state["question"]
-    if q and answer == q.get("answer"):
-        score += 1
+    remaining = float(state.get("remaining", 0.0))
+
+    is_correct = bool(q) and answer == q.get("answer")
+    max_pts = quiz.max_points_per_question()
+    points = 0
+    speed = 0
+    if is_correct:
+        correct += 1
+        points = quiz.points_for(remaining)
+        speed = points - quiz.POINTS_CORRECT
+        score += points
     st.session_state[key] = score
+    st.session_state[ck] = correct
+    return {
+        "correct": is_correct,
+        "points": points,
+        "speed": speed,
+        "remaining": remaining,
+        "expected": q.get("options", [])[q["answer"]] if q and "answer" in q else "",
+        "max": max_pts,
+    }
 
 
 def _finish_section(
@@ -246,6 +283,7 @@ def _finish_section(
     except Exception:
         pass
     score = st.session_state.get(key, 0)
+    correct = st.session_state.get(f"correct_{room_id}_{section}", 0)
     if st.session_state.get(done_key):
         return
     try:
@@ -253,11 +291,11 @@ def _finish_section(
     except Exception:
         pass
     st.session_state[done_key] = True
-    _record_history(room_id, section, section_label, score, total)
+    _record_history(room_id, section, section_label, score, total, correct)
 
 
 def _record_history(
-    room_id: str, section: str, section_label: str, score: int, total: int
+    room_id: str, section: str, section_label: str, score: int, total: int, correct: int
 ) -> None:
     """Lưu kết quả từng phần của người chơi để cộng dồn và xem lại."""
     hist_key = f"hist_{room_id}"
@@ -268,6 +306,8 @@ def _record_history(
             "label": section_label,
             "score": int(score),
             "total": int(total),
+            "correct": int(correct),
+            "max": int(total) * quiz.max_points_per_question(),
         }
     )
     st.session_state[hist_key] = items
@@ -290,7 +330,10 @@ def _show_score_summary(room_id: str, section_label: str) -> None:
     st.markdown(
         f'<div class="ufm-score-card">'
         f'<div class="ufm-score-head">{head}</div>'
-        f'<div class="ufm-score-main">{last["score"]}<span>/{last["total"]}</span></div>',
+        f'<div class="ufm-score-main">{last["score"]}'
+        f'<span>/{last.get("max", last["total"] * quiz.max_points_per_question())}</span></div>'
+        f'<div class="ufm-score-sub">'
+        f'{last.get("correct", 0)}/{last["total"]} câu đúng · có thưởng tốc độ</div>',
         unsafe_allow_html=True,
     )
     if len(hist) > 1:
@@ -301,7 +344,7 @@ def _show_score_summary(room_id: str, section_label: str) -> None:
         )
     rows = "".join(
         f'<li><span>{h["label"]}</span>'
-        f'<b>{h["score"]}/{h["total"]}</b></li>'
+        f'<b>{h["score"]} đ</b></li>'
         for h in sorted(hist, key=lambda x: ORDER.index(x["section"]) if x["section"] in ORDER else 99)
     )
     st.markdown(

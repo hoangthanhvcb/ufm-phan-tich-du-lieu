@@ -352,6 +352,29 @@ section[data-testid="stSidebar"] button[data-testid="stBaseButton-primary"] {{
 .ufm-dot.off {{ background: #ef4444; box-shadow: 0 0 8px #ef4444; }}
 .ufm-dot.wait {{ background: #f59e0b; box-shadow: 0 0 8px #f59e0b; }}
 
+/* Dòng trạng thái AI bấm được: nút trong suốt phủ kín khối trạng thái */
+.st-key-ufm_ai_status_btn {{ position: relative; margin-top: 0.5rem; }}
+.st-key-ufm_ai_status_btn .ufm-ai-status {{ margin-top: 0; cursor: pointer; }}
+.st-key-ufm_ai_status_btn .ufm-ai-status:hover {{
+  border-color: {BLUE};
+  box-shadow: 0 0 0 2px rgba(10,77,140,0.20);
+}}
+.st-key-ufm_ai_status_btn button {{
+  position: absolute !important;
+  top: 0; left: 0;
+  width: 100% !important;
+  height: 38px !important;
+  opacity: 0;
+  cursor: pointer;
+  border-radius: 999px !important;
+}}
+.ufm-ai-note {{
+  font-size: 0.68rem;
+  color: #9FC6E6;
+  letter-spacing: 0.06em;
+  margin: 0.28rem 0 0.15rem 0.7rem;
+}}
+
 /* ------------------------------------------------------------------ */
 /* Thanh top: dùng st.button nên bấm để điều hướng được               */
 /* ------------------------------------------------------------------ */
@@ -513,6 +536,12 @@ PHONE_CSS = f"""
   font-variant-numeric: tabular-nums;
 }}
 .ufm-score-main span {{ font-size: 1.3rem; opacity: 0.75; font-weight: 700; }}
+.ufm-score-sub {{
+  font-size: 0.86rem;
+  font-weight: 600;
+  opacity: 0.9;
+  margin-top: 0.15rem;
+}}
 .ufm-score-total {{
   background: #FFF7E0;
   border: 1.5px solid #F2D98C;

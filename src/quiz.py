@@ -12,6 +12,27 @@ from src import room
 PER_QUESTION_SECONDS = 10
 MAX_QUESTIONS = 3
 
+# Điểm của một câu: đúng = POINTS_CORRECT + thưởng tốc độ theo thời gian còn lại.
+# Sai = 0 điểm. Nhờ vậy xếp hạng vừa phản ánh độ đúng vừa phản ánh tốc độ nộp bài.
+POINTS_CORRECT = 10
+SPEED_BONUS_MAX = 5
+
+
+def points_for(remaining: float) -> int:
+    """Tổng điểm cho một câu trả lời ĐÚNG, tính cả thưởng tốc độ.
+
+    remaining = số giây còn lại ở thời điểm bấm nộp (do server đo).
+    Nộp ngay khi câu mở ra: còn đủ 10s -> 10 + 5 = 15 điểm.
+    Nộp ở giây cuối: còn ~0s -> 10 + 0 = 10 điểm.
+    """
+    ratio = remaining / PER_QUESTION_SECONDS if PER_QUESTION_SECONDS else 0.0
+    ratio = max(0.0, min(1.0, ratio))
+    return POINTS_CORRECT + int(round(SPEED_BONUS_MAX * ratio))
+
+
+def max_points_per_question() -> int:
+    return POINTS_CORRECT + SPEED_BONUS_MAX
+
 IDLE = {
     "status": "idle",  # idle | running | done
     "active": False,
