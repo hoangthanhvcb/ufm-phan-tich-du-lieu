@@ -117,24 +117,22 @@ def sidebar_leaderboard(room_id: str) -> None:
 # ---------------------------------------------------------------------------
 def render_sidebar_menu(current: str, stage: str, step_idx: int, room_id: str, ai_cfg: dict) -> None:
     with st.sidebar:
-        st.markdown('<div class="ufm-menu-title">Nội dung báo cáo</div>', unsafe_allow_html=True)
-
-        for key in sections.ORDER:
-            icon, label = sections.SECTIONS[key]
-            if st.button(
-                f"{icon}  {label}",
-                key=f"menu_{key}",
-                use_container_width=True,
-                type="primary" if key == current else "secondary",
-            ):
-                _goto("steps", sections.ORDER.index(key))
-
-        # Trạng thái AI nằm ở cuối thanh menu
-        connected = bool(ai_cfg.get("enabled"))
-        theme.ai_status_dot(connected, f"AI · {ai_cfg.get('model', '')}" if connected else "AI chưa kết nối")
-
-        st.markdown("---")
+        # 1) Xếp hạng luôn nằm trên cùng
         sidebar_leaderboard(room_id)
+        st.markdown("---")
+
+        # 2) Menu 6 mục (chữ căn trái)
+        st.markdown('<div class="ufm-menu-title">Nội dung báo cáo</div>', unsafe_allow_html=True)
+        with st.container(key="ufm_menu"):
+            for key in sections.ORDER:
+                icon, label = sections.SECTIONS[key]
+                if st.button(
+                    f"{icon}  {label}",
+                    key=f"menu_{key}",
+                    use_container_width=True,
+                    type="primary" if key == current else "secondary",
+                ):
+                    _goto("steps", sections.ORDER.index(key))
 
         st.markdown("---")
         if st.button("🔄 Reset toàn bộ", key="reset_all_btn", use_container_width=True):
@@ -142,6 +140,14 @@ def render_sidebar_menu(current: str, stage: str, step_idx: int, room_id: str, a
             for k in list(st.session_state.keys()):
                 del st.session_state[k]
             st.rerun()
+
+        # 3) Mô hình AI nằm cuối cùng
+        st.markdown('<div style="height:0.3rem"></div>', unsafe_allow_html=True)
+        connected = bool(ai_cfg.get("enabled"))
+        theme.ai_status_dot(
+            connected,
+            f"AI · {ai_cfg.get('model', '')}" if connected else "AI chưa kết nối",
+        )
 
 
 def render_top_bar(current: str) -> None:

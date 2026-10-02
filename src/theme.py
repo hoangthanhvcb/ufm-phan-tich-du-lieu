@@ -258,6 +258,17 @@ div[data-testid="stMetricValue"] {{ color: {BLUE_DARK}; }}
   font-weight: 700;
   margin: 0 0 0.5rem 0.4rem;
 }}
+
+/* Chữ trong menu 6 mục luôn căn trái */
+.st-key-ufm_menu button {{
+  justify-content: flex-start !important;
+  text-align: left !important;
+}}
+.st-key-ufm_menu button > div {{
+  justify-content: flex-start !important;
+  text-align: left !important;
+  width: 100%;
+}}
 section[data-testid="stSidebar"] button[data-testid="stBaseButton-secondary"] {{
   background: transparent !important;
   border: none !important;
