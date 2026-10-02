@@ -196,10 +196,11 @@ def _live_section(room_id: str, device_id: str, player_name: str) -> None:
             disabled=already_sent,
         )
     answer = options.index(picked) if picked in options else -1
-    last = st.session_state.get(f"pts_{choice_key}")
 
+    # Chấm điểm ngầm: người chơi KHÔNG được biết đúng/sai hay được bao nhiêu điểm
+    # cho tới khi cả phần kết thúc - tránh họ đoán theo điểm của nhau.
     if already_sent:
-        _show_answer_feedback(last)
+        st.success("✅ Đã nộp đáp án. Chờ câu tiếp theo…")
         _show_my_scoreboard(room_id, device_id)
         return
 
@@ -209,23 +210,8 @@ def _live_section(room_id: str, device_id: str, player_name: str) -> None:
         use_container_width=True,
         type="primary",
     ):
-        last = _record_answer(room_id, section, state, answer, device_id, player_name)
-        st.session_state[f"pts_{choice_key}"] = last
+        _record_answer(room_id, section, state, answer, device_id, player_name)
         st.session_state[submitted_key] = True
-
-
-def _show_answer_feedback(last: dict | None) -> None:
-    """Phản hồi ngay sau khi nộp: đúng/sai + số điểm có tính thời gian nộp."""
-    if not last:
-        st.info("⏳ Câu này đã hết giờ — không tính điểm.")
-        return
-    if last["correct"]:
-        st.success(
-            f"✅ **Chính xác!** +**{last['points']}** điểm "
-            f"(còn {last['remaining']:.0f}s · thưởng tốc độ +{last['speed']})"
-        )
-    else:
-        st.error("❌ Sai rồi. Đáp án đúng: **" + str(last["expected"]) + "**")
 
 
 def _record_answer(
@@ -235,9 +221,10 @@ def _record_answer(
     answer: int,
     device_id: str,
     player_name: str,
-) -> dict:
+) -> None:
     """Chấm câu hiện tại. Điểm = đúng/sai + thưởng tốc độ theo thời gian còn lại
-    (đo bằng đồng hồ chung của server, không tin đồng hồ của thiết bị)."""
+    (đo bằng đồng hồ chung của server, không tin đồng hồ của thiết bị).
+    Kết quả lưu ngầm, chỉ hiện khi kết thúc cả phần."""
     key = f"score_{room_id}_{section}"
     ck = f"correct_{room_id}_{section}"
     score = st.session_state.get(key, 0)
@@ -246,24 +233,11 @@ def _record_answer(
     remaining = float(state.get("remaining", 0.0))
 
     is_correct = bool(q) and answer == q.get("answer")
-    max_pts = quiz.max_points_per_question()
-    points = 0
-    speed = 0
     if is_correct:
         correct += 1
-        points = quiz.points_for(remaining)
-        speed = points - quiz.POINTS_CORRECT
-        score += points
+        score += quiz.points_for(remaining)
     st.session_state[key] = score
     st.session_state[ck] = correct
-    return {
-        "correct": is_correct,
-        "points": points,
-        "speed": speed,
-        "remaining": remaining,
-        "expected": q.get("options", [])[q["answer"]] if q and "answer" in q else "",
-        "max": max_pts,
-    }
 
 
 def _finish_section(
