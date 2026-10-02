@@ -4,12 +4,27 @@ from __future__ import annotations
 import json
 import os
 import re
+import urllib.error
 import urllib.request
 
 import streamlit as st
 
 DEFAULT_MODEL = "gemini-2.0-flash"
-DEFAULT_OPENROUTER_MODEL = "meta-llama/llama-3.3-70b-instruct:free"
+
+# OpenRouter thường gỡ model free sau một thời gian, nên có danh sách dự phòng.
+DEFAULT_OPENROUTER_MODEL = "qwen/qwen3.8-27b:free"
+OPENROUTER_FALLBACK_MODELS = [
+    "cohere/north-mini-code:free",
+    "nvidia/nemotron-3.5-lightning:free",
+    "google/gemma-4-31b-it:free",
+]
+
+_LAST_MODEL_USED = ""
+
+
+def last_model_used() -> str:
+    """Model thực sự đã sinh ra câu trả lời (có thể là model dự phòng)."""
+    return _LAST_MODEL_USED
 
 
 def _default_api_key() -> str:
@@ -99,14 +114,14 @@ def _call_gemini(api_key: str, prompt: str, model: str) -> str:
         raise RuntimeError("Phản hồi AI không đúng định dạng mong đợi.") from None
 
 
-def _call_openrouter(api_key: str, prompt: str, model: str) -> str:
+def _openrouter_once(api_key: str, prompt: str, model: str) -> str:
     """Gọi OpenRouter API (tương thích OpenAI) và trả về văn bản trả lời."""
     url = "https://openrouter.ai/api/v1/chat/completions"
     body = {
         "model": model,
         "messages": [{"role": "user", "content": prompt}],
         "temperature": 0.7,
-        "max_tokens": 2048,
+        "max_tokens": 4096,
     }
     req = urllib.request.Request(
         url,
@@ -116,12 +131,34 @@ def _call_openrouter(api_key: str, prompt: str, model: str) -> str:
             "Authorization": f"Bearer {api_key}",
         },
     )
-    with urllib.request.urlopen(req, timeout=60) as resp:
+    with urllib.request.urlopen(req, timeout=90) as resp:
         data = json.loads(resp.read().decode("utf-8"))
     try:
         return data["choices"][0]["message"]["content"]
     except (KeyError, IndexError):
         raise RuntimeError("Phản hồi AI không đúng định dạng mong đợi.") from None
+
+
+def _call_openrouter(api_key: str, prompt: str, model: str) -> str:
+    """Gọi OpenRouter; nếu model đã bị gỡ (404) thì tự thử model dự phòng."""
+    global _LAST_MODEL_USED
+    candidates = [model] + [m for m in OPENROUTER_FALLBACK_MODELS if m != model]
+    last_exc: Exception | None = None
+    for cand in candidates:
+        try:
+            text = _openrouter_once(api_key, prompt, cand)
+            _LAST_MODEL_USED = cand
+            return text
+        except urllib.error.HTTPError as exc:
+            last_exc = exc
+            if exc.code == 404 and cand != candidates[-1]:
+                continue  # model này không còn -> thử model kế tiếp
+            raise
+        except urllib.error.URLError as exc:
+            if "404" in str(exc.reason) and cand != candidates[-1]:
+                continue
+            raise
+    raise last_exc if last_exc else RuntimeError("Không gọi được AI.")
 
 
 def _call_llm(provider: str, api_key: str, prompt: str, model: str) -> str:
@@ -386,9 +423,11 @@ def friendly_error(exc: Exception, cfg: dict | None = None) -> str:
     if isinstance(exc, urllib.error.HTTPError) and code == 404:
         return (
             f"❌ **Không tìm thấy model `{model}` trên {provider} (404).**\n\n"
-            f"* Lý do: {reason}\n"
-            f"• Kiểm tra đúng tên model, ví dụ OpenRouter: `openai/gpt-4o-mini`, "
-            f"Gemini: `gemini-2.0-flash`."
+            f"* Lý do: {reason}\n\n"
+            f"• OpenRouter đã gỡ bỏ model này. App đã thử các model dự phòng "
+            f"(`{'`, `'.join(OPENROUTER_FALLBACK_MODELS)}`) nhưng đều không dùng được.\n"
+            f"• Có thể bạn chưa bật bật `data_collection` cho key, hoặc key chưa có quyền dùng model.\n"
+            f"• Kiểm tra danh sách model còn hoạt động: https://openrouter.ai/models"
         )
 
     if isinstance(exc, urllib.error.HTTPError) and code == 429:
@@ -411,7 +450,8 @@ def test_connection(cfg: dict) -> tuple[bool, str]:
             "Chỉ trả lời đúng một chữ: OK",
             cfg.get("model", DEFAULT_MODEL),
         )
-        return True, f"Kết nối thành công. Phản hồi: {out.strip()[:60]}"
+        used = _LAST_MODEL_USED or cfg.get("model", "")
+        return True, f"Kết nối thành công (model `{used}`). Phản hồi: {out.strip()[:40]}"
     except Exception as e:  # noqa: BLE001
         return False, friendly_error(e, cfg)
 
@@ -433,6 +473,8 @@ def render_ai_code(
         "Sinh code Python và R tương ứng với dữ liệu bạn vừa tải lên, "
         "kèm hướng dẫn từng bước để bạn chạy độc lập."
     )
+    if cfg.get("provider") == "openrouter":
+        st.caption(f"Nhà cung cấp: OpenRouter · Model: `{cfg.get('model', '')}`")
 
     col_py, col_r = st.columns(2)
     for col, lang, icon, label in (
