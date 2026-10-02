@@ -439,6 +439,26 @@ def friendly_error(exc: Exception, cfg: dict | None = None) -> str:
     return f"❌ Lỗi khi gọi AI ({provider} · `{model}`): {reason}"
 
 
+def key_diagnostic(cfg: dict) -> str:
+    """Mô tả trạng thái key (chỉ chiều dài + lỗi dán) - KHÔNG hiển thị key."""
+    key = cfg.get("api_key") or ""
+    if not key:
+        return "Chưa có API key"
+    provider = cfg.get("provider", "gemini")
+    prefix = "sk-or-v1-" if provider == "openrouter" else "AIza"
+    notes: list[str] = []
+    if not key.startswith(prefix):
+        notes.append(f"⚠️ không bắt đầu bằng `{prefix}` (dán nhầm loại key?)")
+    if key != key.strip():
+        notes.append("⚠️ thừa khoảng trắng đầu/cuối")
+    if any(c in key for c in "\n\r"):
+        notes.append("⚠️ thừa dòng")
+    if '"' in key or "'" in key:
+        notes.append("⚠️ thừa dấu nháy bên trong giá trị")
+    base = f"{len(key.strip())} ký tự"
+    return base if not notes else f"{base} · " + " ".join(notes)
+
+
 def test_connection(cfg: dict) -> tuple[bool, str]:
     """Gọi thử API với prompt ngắn để kiểm tra key/model có dùng được không."""
     if not cfg.get("enabled"):

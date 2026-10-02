@@ -137,6 +137,8 @@ def _render_ai_status(ai_cfg: dict) -> None:
             st.session_state["ai_check"] = ai.test_connection(ai_cfg)
         st.rerun()
 
+    st.caption(f"Key: {ai.key_diagnostic(ai_cfg)}")
+
     if state is not None and not state[0]:
         st.error(state[1])
     elif state is not None:
