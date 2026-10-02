@@ -324,65 +324,45 @@ section[data-testid="stSidebar"] button[data-testid="stBaseButton-primary"] {{
 .ufm-dot.wait {{ background: #f59e0b; box-shadow: 0 0 8px #f59e0b; }}
 
 /* ------------------------------------------------------------------ */
-/* Thanh top: mục hiện tại đậm, hover hiện tooltip                     */
+/* Thanh top: dùng st.button nên bấm để điều hướng được               */
 /* ------------------------------------------------------------------ */
-.ufm-topbar {{
+.st-key-ufm_topbar {{
   position: sticky;
   top: 0;
   z-index: 999;
-  background: rgba(255,255,255,0.97);
-  backdrop-filter: blur(6px);
-  border-bottom: 1px solid #dce8f5;
-  border-radius: 12px;
   padding: 0.55rem 0.8rem;
   margin-bottom: 0.9rem;
+  background: rgba(255,255,255,0.97);
+  backdrop-filter: blur(6px);
+  border: 1px solid #dce8f5;
+  border-radius: 12px;
   box-shadow: 0 2px 12px rgba(10,77,140,0.10);
-  display: flex;
-  gap: 0.4rem;
-  flex-wrap: wrap;
-  align-items: center;
-  font-family: 'Be Vietnam Pro', 'Segoe UI', sans-serif;
 }}
-.ufm-top-item {{
-  position: relative;
-  font-size: 0.84rem;
+.st-key-ufm_topbar button {{
+  font-family: 'Be Vietnam Pro', 'Segoe UI', sans-serif;
+  font-size: 0.82rem !important;
   font-weight: 600;
-  color: #7a8ca0;
-  padding: 0.3rem 0.6rem;
-  border-radius: 999px;
-  cursor: default;
+  padding: 0.35rem 0.25rem;
   white-space: nowrap;
+  border-radius: 999px !important;
+  border: 1px solid #dce8f5 !important;
+  color: #5B6B7C !important;
+  background: #ffffff !important;
+  box-shadow: none !important;
   transition: all 0.18s ease;
 }}
-.ufm-top-item:hover {{ color: {BLUE}; background: {LIGHT}; }}
-.ufm-top-item.active {{
-  color: #ffffff;
-  background: linear-gradient(135deg, {BLUE_DARK}, {BLUE});
+.st-key-ufm_topbar button:hover {{
+  color: {BLUE} !important;
+  background: {LIGHT} !important;
+  border-color: {BLUE} !important;
+}}
+.st-key-ufm_topbar button[kind="primary"] {{
+  color: #ffffff !important;
+  background: linear-gradient(135deg, {BLUE_DARK}, {BLUE}) !important;
+  border-color: transparent !important;
   font-weight: 800;
-  box-shadow: 0 3px 10px rgba(10,77,140,0.30);
+  box-shadow: 0 3px 10px rgba(10,77,140,0.30) !important;
 }}
-.ufm-top-item::after {{
-  content: attr(data-tip);
-  position: absolute;
-  top: 130%;
-  left: 50%;
-  transform: translateX(-50%) translateY(-6px);
-  background: {BLUE_DEEP};
-  color: #ffffff;
-  font-size: 0.76rem;
-  font-weight: 600;
-  line-height: 1.3;
-  padding: 0.45rem 0.7rem;
-  border-radius: 8px;
-  white-space: normal;
-  width: 230px;
-  text-align: left;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.18s ease, transform 0.18s ease;
-  z-index: 1000;
-}}
-.ufm-top-item:hover::after {{ opacity: 1; transform: translateX(-50%) translateY(0); }}
 
 /* ------------------------------------------------------------------ */
 /* Nút điều hướng nổi: Back / Home / Next (dọc)                        */
@@ -436,6 +416,149 @@ def inject_css() -> None:
     st.markdown(UFM_CSS, unsafe_allow_html=True)
 
 
+PHONE_CSS = f"""
+<style>
+/* --- Đầu câu hỏi: số câu + đồng hồ --- */
+.ufm-q-head {{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  margin: 0.2rem 0 0.35rem 0;
+}}
+.ufm-q-badge {{
+  background: linear-gradient(135deg, {BLUE_DARK}, {BLUE});
+  color: #ffffff;
+  font-size: 0.92rem;
+  font-weight: 800;
+  padding: 0.3rem 0.75rem;
+  border-radius: 999px;
+  box-shadow: 0 2px 8px rgba(10,77,140,0.25);
+}}
+.ufm-q-timer {{
+  font-size: 1.35rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}}
+.ufm-q-sub {{
+  color: #7a8ca0;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin-bottom: 0.3rem;
+}}
+/* --- Thẻ câu hỏi --- */
+.ufm-q-card {{
+  background: linear-gradient(150deg, #FFFFFF 0%, {LIGHT} 100%);
+  border: 1.5px solid #CFE1F3;
+  border-left: 6px solid {BLUE};
+  border-radius: 16px;
+  padding: 1rem 1.05rem;
+  font-size: 1.16rem;
+  font-weight: 700;
+  line-height: 1.55;
+  color: #10314F;
+  margin: 0.5rem 0 0.7rem 0;
+  box-shadow: 0 4px 14px rgba(10,77,140,0.10);
+}}
+/* --- Thẻ kết quả phần vừa chơi --- */
+.ufm-score-card {{
+  background: linear-gradient(140deg, {BLUE_DEEP} 0%, {BLUE} 100%);
+  border-radius: 18px;
+  padding: 1rem 1.1rem;
+  margin: 0.4rem 0 0.6rem 0;
+  color: #ffffff;
+  text-align: center;
+  box-shadow: 0 6px 18px rgba(10,77,140,0.28);
+}}
+.ufm-score-head {{
+  font-size: 0.92rem;
+  font-weight: 700;
+  opacity: 0.92;
+}}
+.ufm-score-main {{
+  font-size: 2.9rem;
+  font-weight: 900;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}}
+.ufm-score-main span {{ font-size: 1.3rem; opacity: 0.75; font-weight: 700; }}
+.ufm-score-total {{
+  background: #FFF7E0;
+  border: 1.5px solid #F2D98C;
+  color: #7A5B00;
+  border-radius: 14px;
+  padding: 0.65rem 0.9rem;
+  text-align: center;
+  font-size: 1.02rem;
+  margin-bottom: 0.6rem;
+}}
+/* --- Danh sách các phần đã chơi --- */
+.ufm-score-list {{
+  background: #FFFFFF;
+  border: 1.5px solid #DCE8F5;
+  border-radius: 14px;
+  padding: 0.8rem 0.95rem;
+  margin-bottom: 0.6rem;
+}}
+.ufm-score-list-t {{
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #7a8ca0;
+  margin-bottom: 0.45rem;
+}}
+.ufm-score-list ul {{ list-style: none; margin: 0; padding: 0; }}
+.ufm-score-list li {{
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.98rem;
+  padding: 0.42rem 0;
+  border-bottom: 1px dashed #E4EDF6;
+}}
+.ufm-score-list li:last-child {{ border-bottom: none; }}
+.ufm-score-list li span {{ color: #3D4F63; }}
+.ufm-score-list li b {{ color: {BLUE}; white-space: nowrap; }}
+
+/* --- Đáp án dạng thẻ bấm được --- */
+.st-key-ufm_opts [data-testid="stRadio"] label {{
+  border: 1.5px solid #DCE8F5;
+  border-radius: 14px;
+  background: #ffffff;
+  padding: 0.75rem 0.85rem;
+  margin-bottom: 0.5rem;
+  font-size: 1.02rem;
+  font-weight: 600;
+  line-height: 1.45;
+  box-shadow: 0 1px 4px rgba(10,77,140,0.06);
+  transition: all 0.15s ease;
+}}
+.st-key-ufm_opts [data-testid="stRadio"] label:hover {{
+  border-color: {BLUE};
+  background: {LIGHT};
+  transform: translateX(2px);
+}}
+.st-key-ufm_opts [data-testid="stRadio"] label:has(input:checked) {{
+  border-color: {BLUE};
+  background: linear-gradient(135deg, {LIGHT}, #E3F0FF);
+  box-shadow: 0 2px 10px rgba(10,77,140,0.16);
+}}
+.st-key-ufm_opts [data-testid="stRadio"] label:has(input:disabled) {{
+  opacity: 0.55;
+}}
+</style>
+"""
+
+
+def inject_phone_css() -> None:
+    """CSS riêng cho giao diện điện thoại (chỉ dùng ở view Play)."""
+    st.markdown(PHONE_CSS, unsafe_allow_html=True)
+
+
 def logo_base64() -> str:
     """Trả về ảnh logo UFM dạng base64 để nhúng HTML."""
     path = ASSETS / "ufm_logo.png"
@@ -482,8 +605,9 @@ def leaderboard_html(board: list[dict]) -> str:
     if not board:
         return '<div class="leaderboard" style="color:#5B6B7C;">Chưa có người chơi.</div>'
 
-    played = [r for r in board if r.get("sections_done", 0) > 0]
-    not_played = [r for r in board if r.get("sections_done", 0) == 0]
+    # Chỉ người đã CÓ ĐIỂM mới được xếp hạng và nhận huy chương
+    played = [r for r in board if (r.get("total_score") or 0) > 0]
+    not_played = [r for r in board if (r.get("total_score") or 0) <= 0]
 
     rows = []
     medals = ["🥇", "🥈", "🥉"]
@@ -528,34 +652,19 @@ def step_badge(index: int, label: str) -> None:
 # ---------------------------------------------------------------------------
 # Thanh top + trạng thái AI + tiêu đề phần
 # ---------------------------------------------------------------------------
-def top_bar(order: list[str], current: str | None, short_fn, title_fn) -> None:
-    """Thanh bar trên cùng: phần đang xem đậm lên, hover hiện tiêu đề đầy đủ."""
-    items = []
-    for key in order:
-        icon, full = title_fn(key)
-        cls = "ufm-top-item active" if key == current else "ufm-top-item"
-        items.append(
-            f'<span class="{cls}" data-tip="{icon} {full}">{icon} {short_fn(key)}</span>'
-        )
-    st.markdown(
-        f'<div class="ufm-topbar">{"".join(items)}</div>',
-        unsafe_allow_html=True,
-    )
-
-
 def ai_status_dot(connected: bool, detail: str = "", pending: bool = False) -> None:
     """Chấm tròn báo trạng thái kết nối AI: xanh = đã gọi thành công, đỏ = lỗi,
-    vàng = có key nhưng chưa kiểm tra."""
+    vàng = có key nhưng chưa kiểm tra. Chỉ hiện MỘT dấu chấm."""
     label = detail or ("AI đã kết nối" if connected else "AI chưa kết nối")
     if pending:
-        cls, icon = "wait", "🟡"
+        cls = "wait"
     elif connected:
-        cls, icon = "on", "🤖"
+        cls = "on"
     else:
-        cls, icon = "off", "🔴"
+        cls = "off"
     st.markdown(
         f'<div class="ufm-ai-status"><span class="ufm-dot {cls}"></span>'
-        f"<span>{icon} {label}</span></div>",
+        f"<span>{label}</span></div>",
         unsafe_allow_html=True,
     )
 

@@ -7,6 +7,7 @@ import streamlit.components.v1 as components
 from src import room
 from src import quiz
 from src import theme
+from src.sections import ORDER
 
 _DEVICE_KEY = "ufm_dev_id"
 
@@ -81,6 +82,7 @@ def get_device_id() -> str:
 
 def render_play_view() -> None:
     theme.inject_css()
+    theme.inject_phone_css()
     qp = st.query_params
     room_id = qp.get("room")
 
@@ -155,21 +157,28 @@ def _live_section(room_id: str, device_id: str, player_name: str) -> None:
 
     if state["status"] == "done":
         _finish_section(room_id, section, section_label, device_id, player_name)
+        _show_score_summary(room_id, section_label)
         _show_my_scoreboard(room_id, device_id)
         return
 
     q = state["question"]
     idx, total = state["q_index"] + 1, state["total"]
     remaining = state["remaining"]
+    ratio = max(0.0, min(1.0, remaining / quiz.PER_QUESTION_SECONDS))
+    timer_color = "#C0392B" if remaining <= 3 else BLUE
 
-    st.markdown(f"### Câu {idx}/{total} · {section_label}")
-    st.progress(max(0.0, min(1.0, remaining / quiz.PER_QUESTION_SECONDS)))
     st.markdown(
-        f"<div style='text-align:center;font-size:1.6rem;font-weight:800;color:"
-        f"{'#C0392B' if remaining <= 3 else '#0A4D8C'}';margin:0.2rem 0 0.6rem 0;'>"
-        f"⏱️ {remaining:.0f}s</div>",
+        f"""
+        <div class="ufm-q-head">
+          <span class="ufm-q-badge">📝 Câu {idx}/{total}</span>
+          <span class="ufm-q-timer" style="color:{timer_color};">⏱️ {remaining:.0f}s</span>
+        </div>
+        <div class="ufm-q-sub">{section_label}</div>
+        <div class="ufm-q-card">{q["question"]}</div>
+        """,
         unsafe_allow_html=True,
     )
+    st.progress(ratio)
 
     # Mỗi câu chỉ được nộp một lần: khóa gắn theo (phòng, phần, câu) + cờ đã nộp
     # trong phiên của thiết bị này -> không thể spam cộng điểm cùng một câu.
@@ -178,12 +187,14 @@ def _live_section(room_id: str, device_id: str, player_name: str) -> None:
     already_sent = bool(st.session_state.get(submitted_key))
 
     options = [str(o) for o in q["options"]]
-    picked = st.radio(
-        f"<b>{q['question']}</b>",
-        options,
-        key=choice_key,
-        disabled=already_sent,
-    )
+    with st.container(key="ufm_opts"):
+        picked = st.radio(
+            "Chọn đáp án",
+            options,
+            key=choice_key,
+            label_visibility="collapsed",
+            disabled=already_sent,
+        )
     answer = options.index(picked) if picked in options else -1
 
     if already_sent:
@@ -225,7 +236,7 @@ def _finish_section(
     device_id: str,
     player_name: str,
 ) -> None:
-    """Kết thúc ván: chốt điểm một lần duy nhất cho phần này."""
+    """Kết thúc ván: chốt điểm một lần duy nhất cho phần này và ghi vào lịch sử."""
     key = f"score_{room_id}_{section}"
     done_key = f"done_{room_id}_{section}"
     total = quiz.MAX_QUESTIONS
@@ -234,19 +245,70 @@ def _finish_section(
         total = state.get("total") or total
     except Exception:
         pass
-    if st.session_state.get(done_key):
-        st.success(
-            f"📝 Bạn đã nộp phần **{section_label}**: "
-            f"{st.session_state.get(key, 0)}/{total} điểm."
-        )
-        return
     score = st.session_state.get(key, 0)
+    if st.session_state.get(done_key):
+        return
     try:
         room.save_score(room_id, section, device_id, player_name, score, total)
     except Exception:
         pass
     st.session_state[done_key] = True
-    st.success(f"📝 Hết giờ! Bạn nộp phần **{section_label}**: {score}/{total} điểm.")
+    _record_history(room_id, section, section_label, score, total)
+
+
+def _record_history(
+    room_id: str, section: str, section_label: str, score: int, total: int
+) -> None:
+    """Lưu kết quả từng phần của người chơi để cộng dồn và xem lại."""
+    hist_key = f"hist_{room_id}"
+    items = [h for h in st.session_state.get(hist_key, []) if h["section"] != section]
+    items.append(
+        {
+            "section": section,
+            "label": section_label,
+            "score": int(score),
+            "total": int(total),
+        }
+    )
+    st.session_state[hist_key] = items
+
+
+def _cumulative(room_id: str) -> int:
+    """Tổng điểm tích luỹ qua tất cả phần người chơi đã hoàn thành."""
+    return sum(int(h["score"]) for h in st.session_state.get(f"hist_{room_id}", []))
+
+
+def _show_score_summary(room_id: str, section_label: str) -> None:
+    """Thẻ tổng kết: điểm của phần vừa chơi + tổng tích luỹ + các phần đã chơi."""
+    hist = st.session_state.get(f"hist_{room_id}", [])
+    if not hist:
+        st.info("⏳ Đã xong phần này, đang chờ phần tiếp theo...")
+        return
+    last = hist[-1]
+    cumulative = _cumulative(room_id)
+    head = f"{'🏅' if cumulative > last['score'] else '📝'} Điểm phần **{last['label']}**"
+    st.markdown(
+        f'<div class="ufm-score-card">'
+        f'<div class="ufm-score-head">{head}</div>'
+        f'<div class="ufm-score-main">{last["score"]}<span>/{last["total"]}</span></div>',
+        unsafe_allow_html=True,
+    )
+    if len(hist) > 1:
+        st.markdown(
+            f'<div class="ufm-score-total">🏅 Tổng tích luỹ: '
+            f'<b>{cumulative} điểm</b> qua {len(hist)} phần</div>',
+            unsafe_allow_html=True,
+        )
+    rows = "".join(
+        f'<li><span>{h["label"]}</span>'
+        f'<b>{h["score"]}/{h["total"]}</b></li>'
+        for h in sorted(hist, key=lambda x: ORDER.index(x["section"]) if x["section"] in ORDER else 99)
+    )
+    st.markdown(
+        f'<div class="ufm-score-list"><div class="ufm-score-list-t">Các phần đã chơi</div>'
+        f"<ul>{rows}</ul></div>",
+        unsafe_allow_html=True,
+    )
 
 
 def _section_label(section: str) -> str:
@@ -256,7 +318,11 @@ def _section_label(section: str) -> str:
 
 
 def _show_my_scoreboard(room_id: str, device_id: str) -> None:
+    """Bảng xếp hạng: chỉ hiện sau khi người chơi đã có điểm, tránh hiện
+    huy chương vàng/bạc ngay khi vừa quét mã tham gia."""
+    if _cumulative(room_id) <= 0:
+        return
     board = room.scoreboard(room_id)
     if board:
-        st.markdown("### 🏆 Bảng điểm")
+        st.markdown("### 🏆 Bảng xếp hạng")
         st.markdown(theme.leaderboard_html(board), unsafe_allow_html=True)

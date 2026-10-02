@@ -505,12 +505,15 @@ def render_ai_code(
     cfg: dict,
 ) -> None:
     """2 nút: Sinh code Python và Sinh code R, mỗi nút có ô code + hướng dẫn."""
-    if not cfg.get("enabled"):
-        st.caption("🔌 Trợ lý AI chưa được kết nối (thiếu API key trong Secrets).")
-        return
-
     st.markdown("---")
     st.markdown("### 🤖 Trợ lý AI — sinh code để tự chạy lại")
+    if not cfg.get("enabled"):
+        st.caption(
+            "🔌 Chưa có API key trong Secrets. Bấm **Kiểm tra kết nối AI** ở cột bên trái "
+            "để thiết lập; phần này sẽ dùng được ngay."
+        )
+        return
+
     st.caption(
         "Sinh code Python và R tương ứng với dữ liệu bạn vừa tải lên, "
         "kèm hướng dẫn từng bước để bạn chạy độc lập."

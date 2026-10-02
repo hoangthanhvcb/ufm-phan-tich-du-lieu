@@ -120,29 +120,27 @@ def _render_ai_status(ai_cfg: dict) -> None:
     provider = "OpenRouter" if ai_cfg.get("provider") == "openrouter" else "Google Gemini"
     if not ai_cfg.get("enabled"):
         theme.ai_status_dot(False, "AI chưa kết nối")
-        st.caption("Thiếu API key trong Secrets.")
         return
 
     state = st.session_state.get("ai_check")  # None | (bool, msg)
     model = ai_cfg.get("model", "")
     if state is None:
-        theme.ai_status_dot(False, f"AI · {model} (chưa kiểm tra)", pending=True)
+        theme.ai_status_dot(False, f"AI · {model}", pending=True)
     elif state[0]:
         theme.ai_status_dot(True, f"AI · {model}")
     else:
-        theme.ai_status_dot(False, f"AI · {model} (lỗi)")
+        theme.ai_status_dot(False, f"AI · {model}")
 
     if st.button("🔌 Kiểm tra kết nối AI", key="ai_check_btn", use_container_width=True):
         with st.spinner("Đang kiểm tra..."):
             st.session_state["ai_check"] = ai.test_connection(ai_cfg)
         st.rerun()
 
-    st.caption(f"Key: {ai.key_diagnostic(ai_cfg)}")
-
-    if state is not None and not state[0]:
-        st.error(state[1])
-    elif state is not None:
-        st.success(state[1])
+    if state is not None:
+        if state[0]:
+            st.success("Kết nối thành công")
+        else:
+            st.error("Kết nối thất bại")
 
 
 def render_sidebar_menu(current: str, stage: str, step_idx: int, room_id: str, ai_cfg: dict) -> None:
@@ -177,7 +175,21 @@ def render_sidebar_menu(current: str, stage: str, step_idx: int, room_id: str, a
 
 
 def render_top_bar(current: str) -> None:
-    theme.top_bar(sections.ORDER, current, sections.short, lambda k: sections.SECTIONS[k])
+    """Thanh trên cùng: BẤM VÀO mục nào sẽ nhảy thẳng tới phần đó.
+    Hover vào mục sẽ hiện tiêu đề đầy đủ (tooltip của Streamlit)."""
+    with st.container(key="ufm_topbar"):
+        cols = st.columns(len(sections.ORDER))
+        for col, key in zip(cols, sections.ORDER):
+            icon, full = sections.SECTIONS[key]
+            with col:
+                if st.button(
+                    f"{icon} {sections.short(key)}",
+                    key=f"top_nav_{key}",
+                    help=full,
+                    use_container_width=True,
+                    type="primary" if key == current else "secondary",
+                ):
+                    _goto("steps", sections.ORDER.index(key))
 
 
 def _nav_targets(stage: str, step_idx: int) -> tuple:
@@ -261,6 +273,12 @@ def render_live_quiz(section_key: str, label: str, questions: list[dict], room_i
         )
 
     state = quiz.view(room_id, section_key)
+    if not questions:
+        st.info(
+            "Chưa có câu hỏi cho phần này. Hãy tải dữ liệu ở phần **Tổ quan** để hệ thống "
+            "tự sinh câu hỏi; mã QR và phần **Trợ lý AI** vẫn dùng được ngay."
+        )
+        return
     if state["status"] == "idle":
         c_play, c_note = st.columns([1, 3])
         with c_play:
@@ -878,6 +896,7 @@ def presenter_view() -> None:
     )
 
     # Menu vẫn chuyển được phần kể cả khi chưa tải dữ liệu lên.
+    questions, result = [], ""
     if df is None and current_key != "overview":
         st.info("⚠️ Chưa có dữ liệu để phân tích.")
         st.markdown(
@@ -892,25 +911,27 @@ def presenter_view() -> None:
             "📂 Sang phần Tổ quan để tải dữ liệu", key="goto_overview", type="primary"
         ):
             _goto("steps", sections.ORDER.index("overview"))
-        return
+    else:
+        questions, result, _ready = SECTION_RENDERERS[current_key](df, summary)
 
-    questions, result, ready = SECTION_RENDERERS[current_key](df, summary)
+    # ----- Trò chơi tương tác + Trợ lý AI: LUÔN hiện, không phụ thuộc tải dữ liệu -----
+    qkey = f"questions_{current_key}"
+    if questions and qkey not in st.session_state:
+        st.session_state[qkey] = game.build_questions(current_key, questions)
+    render_live_quiz(
+        current_key, sections.title(current_key), st.session_state.get(qkey, []), room_id
+    )
 
-    if ready and questions:
-        qkey = f"questions_{current_key}"
-        if qkey not in st.session_state:
-            st.session_state[qkey] = game.build_questions(current_key, questions)
-        render_live_quiz(
-            current_key, sections.title(current_key), st.session_state[qkey], room_id
+    if df is None:
+        ai_context = (
+            "CHƯA CÓ DỮ LIỆU: người dùng chưa tải file lên. Hãy viết code Python "
+            "mẫu giải thích các bước phân tích dữ liệu định lượng (nhập đọc, làm sạch, "
+            "thống kê mô tả, kiểm định độ tin cậy Cronbach-alpha, hồi quy OLS) một cách "
+            "tổng quát, KHÔNG giả định cột dữ liệu cụ thể."
         )
-
-    if ready and df is not None:
-        ai.render_ai_code(
-            sections.title(current_key),
-            _code_context(sections.title(current_key), df, summary, result),
-            current_key,
-            ai_cfg,
-        )
+    else:
+        ai_context = _code_context(sections.title(current_key), df, summary, result)
+    ai.render_ai_code(sections.title(current_key), ai_context, current_key, ai_cfg)
 
 
 # ---------------------------------------------------------------------------
