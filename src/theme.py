@@ -246,6 +246,176 @@ div[data-testid="stMetricValue"] {{ color: {BLUE_DARK}; }}
   font-size: 1.1rem;
   background: linear-gradient(135deg, {BLUE_DARK}, {BLUE});
 }}
+
+/* ------------------------------------------------------------------ */
+/* Menu 6 mục trong sidebar                                            */
+/* ------------------------------------------------------------------ */
+.ufm-menu-title {{
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #9ec5e8;
+  font-weight: 700;
+  margin: 0 0 0.5rem 0.4rem;
+}}
+section[data-testid="stSidebar"] button[data-testid="stBaseButton-secondary"] {{
+  background: transparent !important;
+  border: none !important;
+  border-left: 3px solid rgba(255,255,255,0.18) !important;
+  border-radius: 8px !important;
+  color: #d6e6f7 !important;
+  text-align: left;
+  font-size: 0.88rem;
+  font-weight: 600;
+  padding: 0.5rem 0.6rem;
+  box-shadow: none !important;
+  transition: all 0.18s ease;
+}}
+section[data-testid="stSidebar"] button[data-testid="stBaseButton-secondary"]:hover {{
+  background: rgba(255,255,255,0.10) !important;
+  border-left-color: #ffffff !important;
+  color: #ffffff !important;
+  transform: translateX(3px);
+}}
+section[data-testid="stSidebar"] button[data-testid="stBaseButton-primary"] {{
+  background: linear-gradient(135deg, rgba(255,255,255,0.22), rgba(255,255,255,0.08)) !important;
+  border: 1px solid rgba(255,255,255,0.45) !important;
+  border-left: 4px solid #ffffff !important;
+  border-radius: 8px !important;
+  color: #ffffff !important;
+  text-align: left;
+  font-size: 0.88rem;
+  font-weight: 800;
+  padding: 0.5rem 0.6rem;
+  box-shadow: none !important;
+}}
+
+/* Trạng thái kết nối AI ở đáy menu */
+.ufm-ai-status {{
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: rgba(255,255,255,0.10);
+  border: 1px solid rgba(255,255,255,0.22);
+  border-radius: 999px;
+  padding: 0.4rem 0.8rem;
+  margin-top: 0.5rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #ffffff !important;
+}}
+.ufm-dot {{
+  width: 10px; height: 10px; border-radius: 50%;
+  display: inline-block; flex: 0 0 auto;
+}}
+.ufm-dot.on  {{ background: #22c55e; box-shadow: 0 0 8px #22c55e; }}
+.ufm-dot.off {{ background: #ef4444; box-shadow: 0 0 8px #ef4444; }}
+
+/* ------------------------------------------------------------------ */
+/* Thanh top: mục hiện tại đậm, hover hiện tooltip                     */
+/* ------------------------------------------------------------------ */
+.ufm-topbar {{
+  position: sticky;
+  top: 0;
+  z-index: 999;
+  background: rgba(255,255,255,0.97);
+  backdrop-filter: blur(6px);
+  border-bottom: 1px solid #dce8f5;
+  border-radius: 12px;
+  padding: 0.55rem 0.8rem;
+  margin-bottom: 0.9rem;
+  box-shadow: 0 2px 12px rgba(10,77,140,0.10);
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  align-items: center;
+  font-family: 'Be Vietnam Pro', 'Segoe UI', sans-serif;
+}}
+.ufm-top-item {{
+  position: relative;
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: #7a8ca0;
+  padding: 0.3rem 0.6rem;
+  border-radius: 999px;
+  cursor: default;
+  white-space: nowrap;
+  transition: all 0.18s ease;
+}}
+.ufm-top-item:hover {{ color: {BLUE}; background: {LIGHT}; }}
+.ufm-top-item.active {{
+  color: #ffffff;
+  background: linear-gradient(135deg, {BLUE_DARK}, {BLUE});
+  font-weight: 800;
+  box-shadow: 0 3px 10px rgba(10,77,140,0.30);
+}}
+.ufm-top-item::after {{
+  content: attr(data-tip);
+  position: absolute;
+  top: 130%;
+  left: 50%;
+  transform: translateX(-50%) translateY(-6px);
+  background: {BLUE_DEEP};
+  color: #ffffff;
+  font-size: 0.76rem;
+  font-weight: 600;
+  line-height: 1.3;
+  padding: 0.45rem 0.7rem;
+  border-radius: 8px;
+  white-space: normal;
+  width: 230px;
+  text-align: left;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s ease, transform 0.18s ease;
+  z-index: 1000;
+}}
+.ufm-top-item:hover::after {{ opacity: 1; transform: translateX(-50%) translateY(0); }}
+
+/* ------------------------------------------------------------------ */
+/* Nút điều hướng nổi: Back / Home / Next (dọc)                        */
+/* ------------------------------------------------------------------ */
+.st-key-ufm_float_nav {{
+  position: fixed;
+  right: 26px;
+  bottom: 26px;
+  z-index: 1001;
+  width: 128px;
+  opacity: 0.42;
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}}
+.st-key-ufm_float_nav:hover {{
+  opacity: 1.0;
+  transform: translateX(-4px);
+}}
+.st-key-ufm_float_nav .stButton > button {{
+  width: 100%;
+  font-weight: 700;
+  border-radius: 10px;
+  padding: 0.5rem 0.4rem;
+  font-size: 0.92rem;
+  box-shadow: 0 4px 14px rgba(4,34,63,0.28);
+}}
+.st-key-ufm_float_nav:hover .stButton > button {{ font-weight: 900; }}
+
+/* Nút Play của trò chơi */
+.ufm-play .stButton > button {{
+  background: linear-gradient(135deg, #E9A23B, #F5B041);
+  font-size: 1.05rem;
+  font-weight: 800;
+  padding: 0.6rem 1.6rem;
+}}
+
+/* Nút Bắt đầu cỡ lớn ở trang chủ */
+.ufm-start .stButton > button {{
+  font-size: 1.5rem;
+  font-weight: 900;
+  padding: 1.1rem 3rem;
+  border-radius: 16px;
+  background: linear-gradient(135deg, {BLUE_DEEP} 0%, {BLUE} 55%, {ACCENT} 100%);
+  box-shadow: 0 10px 26px rgba(4,34,63,0.35);
+}}
+.ufm-start .stButton > button:hover {{ transform: scale(1.03); }}
 </style>
 """
 
@@ -339,5 +509,54 @@ def leaderboard_html(board: list[dict]) -> str:
 def step_badge(index: int, label: str) -> None:
     st.markdown(
         f'<div class="ufm-card" style="border-left-color:{ACCENT};"><h4>Bước {index} · {label}</h4></div>',
+        unsafe_allow_html=True,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Thanh top + trạng thái AI + tiêu đề phần
+# ---------------------------------------------------------------------------
+def top_bar(order: list[str], current: str | None, short_fn, title_fn) -> None:
+    """Thanh bar trên cùng: phần đang xem đậm lên, hover hiện tiêu đề đầy đủ."""
+    items = []
+    for key in order:
+        icon, full = title_fn(key)
+        cls = "ufm-top-item active" if key == current else "ufm-top-item"
+        items.append(
+            f'<span class="{cls}" data-tip="{icon} {full}">{icon} {short_fn(key)}</span>'
+        )
+    st.markdown(
+        f'<div class="ufm-topbar">{"".join(items)}</div>',
+        unsafe_allow_html=True,
+    )
+
+
+def ai_status_dot(connected: bool, detail: str = "") -> None:
+    """Chấm tròn xanh/đỏ báo trạng thái kết nối AI (đặt ở cuối menu)."""
+    label = detail or ("AI đã kết nối" if connected else "AI chưa kết nối")
+    dot = "on" if connected else "off"
+    icon = "🤖" if connected else "⚠️"
+    st.markdown(
+        f'<div class="ufm-ai-status"><span class="ufm-dot {dot}"></span>'
+        f"<span>{icon} {label}</span></div>",
+        unsafe_allow_html=True,
+    )
+
+
+def section_heading(index: int, total: int, icon: str, label: str) -> None:
+    """Tiêu đề lớn của phần đang xem."""
+    st.markdown(
+        f"""
+        <div class="ufm-card" style="border-left-width:6px;border-left-color:{ACCENT};
+             padding:1rem 1.3rem;margin-bottom:1rem;">
+            <div style="font-size:0.72rem;letter-spacing:0.14em;text-transform:uppercase;
+                        color:{GRAY};font-weight:700;">
+                PHẦN {index}/{total}
+            </div>
+            <h3 style="margin:0.2rem 0 0 0;font-size:1.35rem;color:{BLUE_DARK};">
+                {icon} {label}
+            </h3>
+        </div>
+        """,
         unsafe_allow_html=True,
     )

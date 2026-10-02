@@ -25,6 +25,7 @@ SHEET_HEADERS = {
     "players": ["room_id", "device_id", "name", "joined_at"],
     "sections": ["room_id", "section", "questions"],
     "answers": ["room_id", "section", "device_id", "name", "score", "total", "answered_at"],
+    "quiz_state": ["room_id", "section", "questions", "q_index", "deadline", "active"],
 }
 
 # Đường dẫn file service account (chạy local).
@@ -163,7 +164,7 @@ def _upsert(sheet_name: str, key_indices: list[int], new_row: list[str]) -> None
 # ---------------------------------------------------------------------------
 def reset_all() -> None:
     """Xóa toàn bộ dữ liệu trò chơi (giữ tiêu đề cột)."""
-    for sheet in ("rooms", "players", "sections", "answers"):
+    for sheet in ("rooms", "players", "sections", "answers", "quiz_state"):
         _write_all(sheet, [])
 
 
@@ -271,3 +272,62 @@ def scoreboard(room: str) -> list[dict]:
 
 def player_count(room: str) -> int:
     return sum(1 for r in _read_rows("players") if len(r) >= 2 and r[0] == room)
+
+
+# ---------------------------------------------------------------------------
+# Trạng thái trò chơi đếm ngược (dùng chung cho web và điện thoại)
+# ---------------------------------------------------------------------------
+def set_quiz_state(
+    room: str,
+    section: str,
+    questions: list[dict],
+    q_index: int,
+    deadline: float,
+    active: bool,
+) -> None:
+    _upsert(
+        "quiz_state",
+        [0, 1],
+        [
+            room,
+            section,
+            json.dumps(questions, ensure_ascii=False),
+            str(q_index),
+            f"{deadline:.3f}",
+            "1" if active else "0",
+        ],
+    )
+
+
+def get_quiz_state(room: str, section: str) -> dict | None:
+    for r in _read_rows("quiz_state"):
+        if len(r) < 6 or r[0] != room or r[1] != section:
+            continue
+        try:
+            questions = json.loads(r[2])
+        except (TypeError, json.JSONDecodeError):
+            questions = []
+        try:
+            q_index = int(float(r[3]))
+        except (TypeError, ValueError):
+            q_index = 0
+        try:
+            deadline = float(r[4])
+        except (TypeError, ValueError):
+            deadline = 0.0
+        return {
+            "questions": questions,
+            "q_index": q_index,
+            "deadline": deadline,
+            "active": r[5] == "1",
+        }
+    return None
+
+
+def clear_quiz_state(room: str, section: str) -> None:
+    rows = [
+        r
+        for r in _read_rows("quiz_state")
+        if not (len(r) >= 2 and r[0] == room and r[1] == section)
+    ]
+    _write_all("quiz_state", rows)

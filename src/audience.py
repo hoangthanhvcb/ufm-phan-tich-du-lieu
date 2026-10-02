@@ -5,6 +5,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 from src import room
+from src import quiz
 from src import theme
 
 _DEVICE_KEY = "ufm_dev_id"
@@ -134,9 +135,9 @@ def render_play_view() -> None:
     _live_section(room_id, device_id, player_name)
 
 
-@st.fragment(run_every=8)
+@st.fragment(run_every=1)
 def _live_section(room_id: str, device_id: str, player_name: str) -> None:
-    """Khối tự làm mới: hiện câu hỏi của phần hiện tại + bảng điểm."""
+    """Khối tự làm mới mỗi giây: câu hỏi đang mở + đồng hồ đếm ngược + bảng điểm."""
     section = room.get_current_section(room_id)
 
     if not section:
@@ -144,47 +145,114 @@ def _live_section(room_id: str, device_id: str, player_name: str) -> None:
         _show_my_scoreboard(room_id, device_id)
         return
 
-    questions = room.get_section_questions(room_id, section)
+    state = quiz.view(room_id, section)
     section_label = _section_label(section)
 
-    if not questions:
-        st.info("Giảng viên chưa công bố câu hỏi cho phần này.")
-        return
-
-    # Đã nộp bài cho phần này -> hiện kết quả
-    if f"last_score_{section}" in st.session_state:
-        sc, tot = st.session_state[f"last_score_{section}"]
-        st.success(f"📝 Bạn đã nộp phần **{section_label}**: {sc}/{tot} điểm.")
+    if state["status"] == "idle":
+        st.info("⏳ Chờ giảng viên bấm **Play** để bắt đầu vòng hỏi...")
         _show_my_scoreboard(room_id, device_id)
         return
 
-    st.markdown(f"### Câu hỏi · {section_label}")
-    st.markdown("Chọn đáp án cho từng câu rồi bấm **Nộp bài**.")
-    answers = []
-    for i, q in enumerate(questions):
-        answers.append(
-            st.radio(
-                f"**{i + 1}. {q['question']}**",
-                list(range(len(q["options"]))),
-                format_func=lambda idx, q=q: q["options"][idx],
-                key=f"play_{section}_{i}",
-            )
+    if state["status"] == "done":
+        _finish_section(room_id, section, section_label, device_id, player_name)
+        _show_my_scoreboard(room_id, device_id)
+        return
+
+    q = state["question"]
+    idx, total = state["q_index"] + 1, state["total"]
+    remaining = state["remaining"]
+
+    st.markdown(f"### Câu {idx}/{total} · {section_label}")
+    st.progress(max(0.0, min(1.0, remaining / quiz.PER_QUESTION_SECONDS)))
+    st.markdown(
+        f"<div style='text-align:center;font-size:1.6rem;font-weight:800;color:"
+        f"{'#C0392B' if remaining <= 3 else '#0A4D8C'}';margin:0.2rem 0 0.6rem 0;'>"
+        f"⏱️ {remaining:.0f}s</div>",
+        unsafe_allow_html=True,
+    )
+
+    # Mỗi câu chỉ được nộp một lần: khóa gắn theo (phòng, phần, câu) + cờ đã nộp
+    # trong phiên của thiết bị này -> không thể spam cộng điểm cùng một câu.
+    choice_key = f"ans_{room_id}_{section}_{state['q_index']}"
+    submitted_key = f"sent_{choice_key}"
+    already_sent = bool(st.session_state.get(submitted_key))
+
+    options = [str(o) for o in q["options"]]
+    picked = st.radio(
+        f"<b>{q['question']}</b>",
+        options,
+        key=choice_key,
+        disabled=already_sent,
+    )
+    answer = options.index(picked) if picked in options else -1
+
+    if already_sent:
+        st.success("✅ Đã nộp đáp án. Chờ câu tiếp theo…")
+        _show_my_scoreboard(room_id, device_id)
+        return
+
+    if st.button(
+        "📤 Nộp đáp án",
+        key=f"submit_{choice_key}",
+        use_container_width=True,
+        type="primary",
+    ):
+        _record_answer(room_id, section, state, answer, device_id, player_name)
+        st.session_state[submitted_key] = True
+
+
+def _record_answer(
+    room_id: str,
+    section: str,
+    state: dict,
+    answer: int,
+    device_id: str,
+    player_name: str,
+) -> None:
+    """Lưu đáp án của câu hiện tại và cộng điểm nếu đúng."""
+    key = f"score_{room_id}_{section}"
+    score = st.session_state.get(key, 0)
+    q = state["question"]
+    if q and answer == q.get("answer"):
+        score += 1
+    st.session_state[key] = score
+
+
+def _finish_section(
+    room_id: str,
+    section: str,
+    section_label: str,
+    device_id: str,
+    player_name: str,
+) -> None:
+    """Kết thúc ván: chốt điểm một lần duy nhất cho phần này."""
+    key = f"score_{room_id}_{section}"
+    done_key = f"done_{room_id}_{section}"
+    total = quiz.MAX_QUESTIONS
+    try:
+        state = quiz.view(room_id, section)
+        total = state.get("total") or total
+    except Exception:
+        pass
+    if st.session_state.get(done_key):
+        st.success(
+            f"📝 Bạn đã nộp phần **{section_label}**: "
+            f"{st.session_state.get(key, 0)}/{total} điểm."
         )
-    if st.button("📤 Nộp bài", key=f"play_submit_{section}"):
-        score = sum(1 for i, q in enumerate(questions) if answers[i] == q["answer"])
-        room.save_score(room_id, section, device_id, player_name, score, len(questions))
-        st.session_state[f"last_score_{section}"] = (score, len(questions))
-        st.rerun()
+        return
+    score = st.session_state.get(key, 0)
+    try:
+        room.save_score(room_id, section, device_id, player_name, score, total)
+    except Exception:
+        pass
+    st.session_state[done_key] = True
+    st.success(f"📝 Hết giờ! Bạn nộp phần **{section_label}**: {score}/{total} điểm.")
 
 
 def _section_label(section: str) -> str:
-    return {
-        "descriptive": "Thống kê mô tả",
-        "cronbach": "Cronbach's Alpha",
-        "efa": "Phân tích nhân tố (EFA)",
-        "correlation": "Tương quan Pearson",
-        "regression": "Hồi quy tuyến tính",
-    }.get(section, section)
+    from src.sections import SECTIONS
+
+    return SECTIONS.get(section, (section, section))[1]
 
 
 def _show_my_scoreboard(room_id: str, device_id: str) -> None:

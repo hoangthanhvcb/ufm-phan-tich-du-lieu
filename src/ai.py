@@ -252,45 +252,127 @@ def generate_code(step_name: str, context: str, api_key: str, model: str, provid
 # ---------------------------------------------------------------------------
 # Khối giao diện AI nhúng vào từng bước
 # ---------------------------------------------------------------------------
+def generate_code_for_language(
+    step_name: str, context: str, lang: str, api_key: str, model: str, provider: str = "gemini"
+) -> str:
+    """Sinh code cho một ngôn ngữ cụ thể: 'python' hoặc 'r'.
+
+    Trả về (code, huong_dan) với huong_dan là các bước chạy dạng Markdown.
+    """
+    lang = lang.lower()
+    if lang not in ("python", "r"):
+        raise ValueError("lang phải là 'python' hoặc 'r'")
+
+    specs = {
+        "python": (
+            "PYTHON",
+            "pandas, numpy, scipy, statsmodels, scikit-learn, factor_analyzer",
+            "```python",
+        ),
+        "r": (
+            "R",
+            "psych, corrplot, stats, e1071, factoextra, readr, dplyr",
+            "```r",
+        ),
+    }
+    name, pkgs, fence = specs[lang]
+
+    prompt = (
+        "Bạn là chuyên gia phân tích dữ liệu định lượng và lập trình thống kê.\n"
+        f"Hãy viết code {name} tương ứng cho bước phân tích: '{step_name}'.\n\n"
+        f"YÊU CẦU BẮT BUỘC:\n"
+        f"1. Trả về đúng 2 phần, không thêm phần khác:\n"
+        f"## CODE\n{fence}\n<code>\n```\n\n"
+        f"## HƯỚNG DẪN\n"
+        f"- Các bước chạy từng dòng (đánh số hoặc dùng '- '), ghi rõ cài đặt gói nếu cần.\n"
+        f"2. Code PHẢI CHẠY ĐƯỢC ĐỘC LẬP: tự đọc file dữ liệu, không cần biến ngoài.\n"
+        f"3. Chỉ dùng thư viện: {pkgs}.\n"
+        f"4. Dùng ĐÚNG tên biến/cột được cung cấp, không tự đặt tên biến giả.\n"
+        f"5. Comment trong code bằng tiếng Việt, ngắn gọn.\n"
+        f"6. In kết quả để người dùng kiểm tra ("
+        f"{'print()' if lang == 'python' else 'print() / cat()'}).\n\n"
+        f"THÔNG TIN DỮ LIỆU VÀ KẾT QUẢ BƯỚC '{step_name}':\n{context}"
+    )
+    raw = _call_llm(provider, api_key, prompt, model)
+    code, guide = _split_code_and_guide(raw, lang)
+    return code, guide
+
+
+def _split_code_and_guide(raw: str, lang: str) -> tuple[str, str]:
+    """Tách phần code và phần hướng dẫn từ câu trả lời của AI."""
+    fence = "python" if lang == "python" else "r"
+    m = re.search(rf"```{fence}\s*\n(.*?)```", raw, re.DOTALL)
+    if m:
+        code = m.group(1).strip()
+    else:
+        # Không có fenced block -> lấy từ sau tiêu đề CODE
+        parts = re.split(r"##\s*(?:CODE|HƯỚNG DẪN|HUONG DAN)", raw, flags=re.IGNORECASE)
+        code = parts[1].strip() if len(parts) > 1 else raw.strip()
+
+    # Phần hướng dẫn: sau tiêu đề HƯỚNG DẪN
+    guide = ""
+    gm = re.search(r"##\s*(?:HƯỚNG DẪN|HUONG DAN)(.*)$", raw, re.DOTALL | re.IGNORECASE)
+    if gm:
+        guide = gm.group(1).strip()
+        # Bỏ code block nếu lẫn vào hướng dẫn
+        guide = re.sub(r"```.*?```", "", guide, flags=re.DOTALL).strip()
+    return code, guide
+
+
 def _extract_code_block(text: str, lang: str) -> str:
     m = re.search(rf"```{lang}\s*\n(.*?)```", text, re.DOTALL)
     return m.group(1).strip() if m else ""
 
 
-def render_ai_enhancements(step_name: str, context: str, key_prefix: str, cfg: dict) -> None:
-    """Sinh đoạn code Python và R để sinh viên tự chạy lại độc lập."""
+def render_ai_code(
+    step_name: str,
+    context: str,
+    key_prefix: str,
+    cfg: dict,
+) -> None:
+    """2 nút: Sinh code Python và Sinh code R, mỗi nút có ô code + hướng dẫn."""
     if not cfg.get("enabled"):
+        st.caption("🔌 Trợ lý AI chưa được kết nối (thiếu API key trong Secrets).")
         return
 
     st.markdown("---")
-    st.markdown("### 🤖 Trợ lý AI — sinh code Python & R")
-    st.caption("Tạo code tương ứng với bước phân tích này để bạn tự chạy lại trên Python hoặc R.")
+    st.markdown("### 🤖 Trợ lý AI — sinh code để tự chạy lại")
+    st.caption(
+        "Sinh code Python và R tương ứng với dữ liệu bạn vừa tải lên, "
+        "kèm hướng dẫn từng bước để bạn chạy độc lập."
+    )
 
-    s_key = f"{key_prefix}_ai_code"
-    if st.button("💻 Sinh code Python & R", key=f"{key_prefix}_btn_code", type="primary"):
-        with st.spinner("AI đang sinh code..."):
-            try:
-                st.session_state[s_key] = generate_code(
-                    step_name, context, cfg["api_key"], cfg["model"], cfg.get("provider", "gemini")
-                )
-            except Exception as e:  # noqa: BLE001
-                st.error(f"Lỗi khi gọi AI: {e}")
+    col_py, col_r = st.columns(2)
+    for col, lang, icon, label in (
+        (col_py, "python", "🐍", "Sinh code Python"),
+        (col_r, "r", "📊", "Sinh code R"),
+    ):
+        with col:
+            if st.button(
+                f"{icon} {label}",
+                key=f"{key_prefix}_btn_code_{lang}",
+                use_container_width=True,
+                type="primary",
+            ):
+                with st.spinner(f"AI đang sinh code {lang.upper()}..."):
+                    try:
+                        code, guide = generate_code_for_language(
+                            step_name,
+                            context,
+                            lang,
+                            cfg["api_key"],
+                            cfg["model"],
+                            cfg.get("provider", "gemini"),
+                        )
+                        st.session_state[f"{key_prefix}_code_{lang}"] = code
+                        st.session_state[f"{key_prefix}_guide_{lang}"] = guide
+                    except Exception as e:  # noqa: BLE001
+                        st.error(f"Lỗi khi gọi AI: {e}")
 
-    if s_key in st.session_state:
-        code = st.session_state[s_key]
-        py = _extract_code_block(code, "python")
-        rr = _extract_code_block(code, "r")
-        if py or rr:
-            t_py, t_r = st.tabs(["🐍 Python", "📊 R"])
-            with t_py:
-                if py:
-                    st.code(py, language="python")
-                else:
-                    st.info("AI không trả về code Python.")
-            with t_r:
-                if rr:
-                    st.code(rr, language="r")
-                else:
-                    st.info("AI không trả về code R.")
-        else:
-            st.markdown(code)
+            code = st.session_state.get(f"{key_prefix}_code_{lang}")
+            guide = st.session_state.get(f"{key_prefix}_guide_{lang}")
+            if code:
+                st.code(code, language=lang)
+            if guide:
+                with st.expander(f"📖 Hướng dẫn từng bước ({lang.upper()})", expanded=True):
+                    st.markdown(guide)

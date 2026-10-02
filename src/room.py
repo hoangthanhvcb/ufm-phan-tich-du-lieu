@@ -66,6 +66,11 @@ def _init_db() -> None:
             room_id TEXT, section TEXT, device_id TEXT, name TEXT,
             score INTEGER, total INTEGER, answered_at TEXT
         );
+        CREATE TABLE IF NOT EXISTS quiz_state (
+            room_id TEXT, section TEXT, questions TEXT,
+            q_index INTEGER, deadline REAL, active INTEGER,
+            PRIMARY KEY (room_id, section)
+        );
         """
     )
     con.commit()
@@ -251,3 +256,81 @@ def player_count(room: str) -> int:
     row = con.execute("SELECT COUNT(*) AS c FROM players WHERE room_id = ?", (room,)).fetchone()
     con.close()
     return int(row["c"])
+
+
+# ---------------------------------------------------------------------------
+# Trạng thái trò chơi đếm ngược (dùng chung cho web và điện thoại)
+# ---------------------------------------------------------------------------
+def set_quiz_state(
+    room: str,
+    section: str,
+    questions: list[dict],
+    q_index: int,
+    deadline: float,
+    active: bool,
+) -> None:
+    if _use_gsheets():
+        try:
+            gsheets.set_quiz_state(room, section, questions, q_index, deadline, active)
+            return
+        except Exception:
+            _mark_broken()
+    _init_db()
+    con = _conn()
+    con.execute(
+        "INSERT OR REPLACE INTO quiz_state (room_id, section, questions, q_index, deadline, active) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (
+            room,
+            section,
+            json.dumps(questions, ensure_ascii=False),
+            int(q_index),
+            float(deadline),
+            1 if active else 0,
+        ),
+    )
+    con.commit()
+    con.close()
+
+
+def get_quiz_state(room: str, section: str) -> dict | None:
+    if _use_gsheets():
+        try:
+            return gsheets.get_quiz_state(room, section)
+        except Exception:
+            _mark_broken()
+    _init_db()
+    con = _conn()
+    row = con.execute(
+        "SELECT questions, q_index, deadline, active FROM quiz_state WHERE room_id = ? AND section = ?",
+        (room, section),
+    ).fetchone()
+    con.close()
+    if not row:
+        return None
+    try:
+        questions = json.loads(row["questions"])
+    except (TypeError, json.JSONDecodeError):
+        questions = []
+    return {
+        "questions": questions,
+        "q_index": int(row["q_index"] or 0),
+        "deadline": float(row["deadline"] or 0.0),
+        "active": bool(row["active"]),
+    }
+
+
+def clear_quiz_state(room: str, section: str) -> None:
+    if _use_gsheets():
+        try:
+            gsheets.clear_quiz_state(room, section)
+            return
+        except Exception:
+            _mark_broken()
+    _init_db()
+    con = _conn()
+    con.execute(
+        "DELETE FROM quiz_state WHERE room_id = ? AND section = ?", (room, section)
+    )
+    con.commit()
+    con.close()

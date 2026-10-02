@@ -192,6 +192,113 @@ def _tf_question(q: str, statement: bool, explanation: str) -> dict:
     }
 
 
+def questions_overview(summary: dict) -> list[dict]:
+    """Câu hỏi cho phần Tổng quan về dữ liệu định lượng."""
+    qs = []
+    n_num = len(summary.get("numeric_cols", []))
+    n_cat = len(summary.get("categorical_cols", []))
+    if n_num + n_cat:
+        qs.append(
+            {
+                "question": (
+                    f"Bộ dữ liệu có bao nhiêu biến định lượng và phân loại?\n"
+                    f"A. {n_num} – {n_cat}\n"
+                    f"B. {n_cat} – {n_num}\n"
+                    f"C. {n_num} – 0\n"
+                    f"D. 0 – {n_cat}"
+                ),
+                "options": ["A", "B", "C", "D"],
+                "answer": 0,
+                "explanation": f"Dữ liệu có {n_num} biến định lượng và {n_cat} biến phân loại.",
+            }
+        )
+    qs += [
+        _tf_question(
+            "Dữ liệu định lượng (định lượng) là dữ liệu có thể đo lường bằng số.",
+            True,
+            "Dữ liệu định lượng biểu diễn bằng số và có ý nghĩa toán học.",
+        ),
+        _tf_question(
+            "Biến phân loại chỉ có thể là biến chuỗi hoặc logic.",
+            True,
+            "Biến phân loại chia nhóm: giới tính, học vấn, tỉnh thành...",
+        ),
+    ]
+    return qs
+
+
+def questions_cleaning(completeness: dict, consistency: dict) -> list[dict]:
+    """Câu hỏi cho phần Thu thập, mã hoá và làm sạch dữ liệu."""
+    qs = []
+    missing = completeness.get("missing_cells", 0)
+    qs.append(
+        {
+            "question": (
+                "Dữ liệu hiện có bao nhiêu ô bị thiếu giá trị?\n"
+                f"A. {missing}\n"
+                f"B. 0\n"
+                f"C. {completeness.get('rows_with_missing', 0)}\n"
+                "D. Không xác định"
+            ),
+            "options": ["A", "B", "C", "D"],
+            "answer": 0,
+            "explanation": f"Tổng số ô trống là {missing}.",
+        }
+    )
+    if consistency.get("constant_cols"):
+        cols = ", ".join(consistency["constant_cols"][:3])
+        qs.append(
+            {
+                "question": (
+                    f"Cột nào không có biến động (giá trị không đổi)?\nA. {cols}\n"
+                    "B. Không có cột nào\nC. Tất cả các cột\nD. Cột đầu tiên"
+                ),
+                "options": ["A", "B", "C", "D"],
+                "answer": 0,
+                "explanation": f"Cột giá trị không đổi: {cols}.",
+            }
+        )
+    qs += [
+        _tf_question(
+            "Mã hoá biến phân loại thành số làm mất thông tin bản chất của biến.",
+            True,
+            "Nên dùng mã hoá nhân với biến giả (dummy) thay vì gán số tuần tự.",
+        ),
+        _tf_question(
+            "Giá trị vô hạn (∞, -∞) hoặc NaN đều làm hỏng kết quả phân tích.",
+            True,
+            "Cần xử lý giá trị khuyết trước khi chạy mô hình.",
+        ),
+    ]
+    return qs
+
+
+def questions_ols_eval(fit: dict) -> list[dict]:
+    """Câu hỏi cho phần Đánh giá mô hình hồi quy."""
+    qs = []
+    if fit:
+        qs += [
+            _tf_question(
+                "Hệ số R² càng gần 1 thì mô hình giải thích dữ liệu càng tốt.",
+                True,
+                "R² đo mức độ phù hợp của mô hình với dữ liệu quan sát.",
+            ),
+            _tf_question(
+                "VIF ≥ 10 là dấu hiệu đa cộng tuyến nghiêm trọng giữa các biến độc lập.",
+                True,
+                "VIF cao cho thấy biến độc lập bị trùng lặp thông tin với nhau.",
+            ),
+            _tf_question(
+                "Kiểm định F của mô hình OLS cho biết mô hình có ý nghĩa thống kê hay không.",
+                True,
+                "F (ANOVA) kiểm tra giả thuyết H0: tất cả hệ số bằng 0.",
+            ),
+        ]
+    else:
+        qs += [_tf_question("OLS là phương pháp hồi quy tuyến tính.", True, "OLS = Ordinary Least Squares.")]
+    return qs
+
+
 def questions_descriptive(numeric_desc, cat_freq, cat_col) -> list[dict]:
     """Câu hỏi cho bước thống kê mô tả."""
     qs = []
