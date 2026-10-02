@@ -165,7 +165,7 @@ def _live_section(room_id: str, device_id: str, player_name: str) -> None:
     idx, total = state["q_index"] + 1, state["total"]
     remaining = state["remaining"]
     ratio = max(0.0, min(1.0, remaining / quiz.PER_QUESTION_SECONDS))
-    timer_color = "#C0392B" if remaining <= 3 else BLUE
+    timer_color = "#C0392B" if remaining <= 3 else theme.BLUE
 
     st.markdown(
         f"""

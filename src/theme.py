@@ -196,6 +196,15 @@ div[data-testid="stMetricValue"] {{ color: {BLUE_DARK}; }}
   overflow-y: auto;
   padding-right: 4px;
 }}
+/* Trong sidebar: cao vừa phải để 20+ người không đẩy các mục khác ra khỏi màn hình */
+[data-testid="stSidebar"] .leaderboard {{
+  max-height: 250px;
+}}
+.leaderboard-more {{
+  background: #F5F9FF;
+  border-top: 1px dashed #CFE1F3;
+  font-style: italic;
+}}
 .leaderboard-row {{
   display: flex;
   align-items: center;
@@ -257,6 +266,26 @@ div[data-testid="stMetricValue"] {{ color: {BLUE_DARK}; }}
   color: #9ec5e8;
   font-weight: 700;
   margin: 0 0 0.5rem 0.4rem;
+}}
+/* Dòng "Đang xem 3/6" ở sidebar */
+.ufm-now {{
+  background: linear-gradient(135deg, {BLUE_DEEP}, {BLUE});
+  color: #ffffff;
+  font-size: 0.88rem;
+  font-weight: 700;
+  line-height: 1.35;
+  padding: 0.55rem 0.7rem;
+  border-radius: 12px;
+  box-shadow: 0 3px 10px rgba(10,77,140,0.25);
+}}
+/* Nút chốt buổi học ở cuối phần cuối cùng */
+.st-key-ufm_finish_btn button {{
+  padding: 0.8rem 1rem;
+  font-size: 1.05rem !important;
+  font-weight: 800 !important;
+  border-radius: 0 !important;
+  clip-path: polygon(14px 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%, 0 14px);
+  box-shadow: 0 10px 26px rgba(10,77,140,0.32) !important;
 }}
 
 /* Chữ trong menu 6 mục luôn căn trái */
@@ -588,7 +617,7 @@ def hero() -> None:
                 <span class="badge">🧩 EFA</span>
                 <span class="badge">🔗 Tương quan</span>
                 <span class="badge">📈 Hồi quy</span>
-                <span class="badge">🎮 Trò chơi tương tác QR</span>
+                <span class="badge">📱 QUIZZ</span>
             </div>
         </div>
         """,
@@ -600,18 +629,24 @@ def card(title: str, body: str) -> str:
     return f'<div class="ufm-card"><h4>{title}</h4><p>{body}</p></div>'
 
 
-def leaderboard_html(board: list[dict]) -> str:
-    """Sinh HTML bảng xếp hạng: top 3 (đã trả lời) nổi bật, chưa chơi xếp cuối không huy chương."""
+def leaderboard_html(board: list[dict], top: int = 10) -> str:
+    """Bảng xếp hạng co giãn theo số người chơi.
+
+    - Top 3 (đã có điểm) nổi bật, người 0 điểm xếp cuối không huy chương.
+    - Chỉ hiện `top` người có điểm cao nhất + dòng "+N người khác".
+    - Danh sách trong khối có `max-height` nên 20+ người vẫn vừa ô sidebar.
+    """
     if not board:
         return '<div class="leaderboard" style="color:#5B6B7C;">Chưa có người chơi.</div>'
 
     # Chỉ người đã CÓ ĐIỂM mới được xếp hạng và nhận huy chương
     played = [r for r in board if (r.get("total_score") or 0) > 0]
     not_played = [r for r in board if (r.get("total_score") or 0) <= 0]
+    hidden = len(played) - top
 
     rows = []
     medals = ["🥇", "🥈", "🥉"]
-    for i, r in enumerate(played):
+    for i, r in enumerate(played[:top]):
         cls = "leaderboard-row"
         if i == 0:
             cls += " leaderboard-top1"
@@ -629,15 +664,35 @@ def leaderboard_html(board: list[dict]) -> str:
             f"</div>"
         )
 
-    # Người chơi chưa trả lời (0 điểm) - không xếp hạng
-    for r in not_played:
+    if hidden > 0:
         rows.append(
-            f'<div class="leaderboard-row" style="opacity:0.65;">'
-            f'<span class="rank" style="color:#9aa7b4;">–</span>'
-            f'<span class="lname">{r["name"]}</span>'
-            f'<span class="lscore" style="background:#f1f4f7;color:#7a8ca0;">0 điểm</span>'
+            f'<div class="leaderboard-row leaderboard-more">'
+            f'<span class="rank">…</span>'
+            f'<span class="lname">+{hidden} người khác</span>'
+            f'<span class="lscore" style="background:#f1f4f7;color:#7a8ca0;">—</span>'
             f"</div>"
         )
+
+    # Người chơi chưa trả lời (0 điểm) - không xếp hạng
+    if not_played:
+        shown_zero = not_played[:5]
+        for r in shown_zero:
+            rows.append(
+                f'<div class="leaderboard-row" style="opacity:0.65;">'
+                f'<span class="rank" style="color:#9aa7b4;">–</span>'
+                f'<span class="lname">{r["name"]}</span>'
+                f'<span class="lscore" style="background:#f1f4f7;color:#7a8ca0;">0 điểm</span>'
+                f"</div>"
+            )
+        left = len(not_played) - len(shown_zero)
+        if left > 0:
+            rows.append(
+                f'<div class="leaderboard-row" style="opacity:0.65;">'
+                f'<span class="rank" style="color:#9aa7b4;">–</span>'
+                f'<span class="lname">+{left} người chưa chơi</span>'
+                f'<span class="lscore" style="background:#f1f4f7;color:#7a8ca0;">0 điểm</span>'
+                f"</div>"
+            )
 
     return '<div class="leaderboard">' + "".join(rows) + "</div>"
 

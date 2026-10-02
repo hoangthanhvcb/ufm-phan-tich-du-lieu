@@ -20,6 +20,8 @@ from src import audience
 from src import charts
 from src import correlation
 from src import cronbach
+from src import intro
+from src import podium
 from src import data_loader as dl
 from src import data_quality as dq
 from src import descriptive as desc
@@ -144,23 +146,21 @@ def _render_ai_status(ai_cfg: dict) -> None:
 
 
 def render_sidebar_menu(current: str, stage: str, step_idx: int, room_id: str, ai_cfg: dict) -> None:
+    """Sidebar chỉ còn: Xếp hạng · Reset · Trạng thái AI.
+    Điều hướng 6 phần nằm ở thanh trên cùng."""
     with st.sidebar:
         # 1) Xếp hạng luôn nằm trên cùng
         sidebar_leaderboard(room_id)
-        st.markdown("---")
 
-        # 2) Menu 6 mục (chữ căn trái)
-        st.markdown('<div class="ufm-menu-title">Nội dung báo cáo</div>', unsafe_allow_html=True)
-        with st.container(key="ufm_menu"):
-            for key in sections.ORDER:
-                icon, label = sections.SECTIONS[key]
-                if st.button(
-                    f"{icon}  {label}",
-                    key=f"menu_{key}",
-                    use_container_width=True,
-                    type="primary" if key == current else "secondary",
-                ):
-                    _goto("steps", sections.ORDER.index(key))
+        # 2) Tiến trình hiện tại (không bấm được, chỉ để biết đang ở đâu)
+        if current:
+            idx = sections.ORDER.index(current) + 1
+            icon, label = sections.SECTIONS[current]
+            st.markdown(
+                f'<div class="ufm-menu-title">Đang xem {idx}/{len(sections.ORDER)}</div>'
+                f'<div class="ufm-now">{icon} {label}</div>',
+                unsafe_allow_html=True,
+            )
 
         st.markdown("---")
         if st.button("🔄 Reset toàn bộ", key="reset_all_btn", use_container_width=True):
@@ -199,6 +199,8 @@ def _nav_targets(stage: str, step_idx: int) -> tuple:
         nxt = ("done", 0) if step_idx >= n - 1 else ("steps", step_idx + 1)
         return prev, nxt
     if stage == "done":
+        return ("steps", n - 1), None
+    if stage == "podium":
         return ("steps", n - 1), None
     return None, None
 
@@ -253,7 +255,7 @@ def web_quiz_fragment(room_id: str, section_key: str, label: str) -> None:
 
 def render_live_quiz(section_key: str, label: str, questions: list[dict], room_id: str) -> None:
     """QR + nút Play; khi chạy thì câu hỏi hiện cả trên web lẫn điện thoại."""
-    st.markdown("### 📱 Trò chơi tương tác")
+    st.markdown("### 📱 QUIZZ")
     url = f"{get_origin()}?view=play&room={room_id}"
 
     left, right = st.columns([1, 2])
@@ -274,10 +276,7 @@ def render_live_quiz(section_key: str, label: str, questions: list[dict], room_i
 
     state = quiz.view(room_id, section_key)
     if not questions:
-        st.info(
-            "Chưa có câu hỏi cho phần này. Hãy tải dữ liệu ở phần **Tổ quan** để hệ thống "
-            "tự sinh câu hỏi; mã QR và phần **Trợ lý AI** vẫn dùng được ngay."
-        )
+        st.caption("Chưa có câu hỏi cho phần này.")
         return
     if state["status"] == "idle":
         c_play, c_note = st.columns([1, 3])
@@ -856,6 +855,19 @@ def presenter_view() -> None:
         render_landing(room_id)
         return
 
+    if stage == "podium":
+        podium.render(room_id)
+        c1, c2 = st.columns(2)
+        with c1:
+            if st.button("⬅️ Quay lại phần cuối", key="pod_back_btn", use_container_width=True):
+                _goto("steps", len(sections.ORDER) - 1)
+        with c2:
+            if st.button("🔄 Bắt đầu buổi mới", key="pod_restart_btn", use_container_width=True):
+                for k in list(st.session_state.keys()):
+                    del st.session_state[k]
+                st.rerun()
+        return
+
     if stage == "done":
         render_top_bar(current_key)
         theme.hero()
@@ -914,7 +926,7 @@ def presenter_view() -> None:
     else:
         questions, result, _ready = SECTION_RENDERERS[current_key](df, summary)
 
-    # ----- Trò chơi tương tác + Trợ lý AI: LUÔN hiện, không phụ thuộc tải dữ liệu -----
+    # ----- QUIZZ + Trợ lý AI: LUÔN hiện, không phụ thuộc tải dữ liệu -----
     qkey = f"questions_{current_key}"
     if questions and qkey not in st.session_state:
         st.session_state[qkey] = game.build_questions(current_key, questions)
@@ -933,6 +945,33 @@ def presenter_view() -> None:
         ai_context = _code_context(sections.title(current_key), df, summary, result)
     ai.render_ai_code(sections.title(current_key), ai_context, current_key, ai_cfg)
 
+    # ----- Cuối phần cuối cùng: nút chốt buổi học, sang trang trao giải -----
+    if current_key == sections.ORDER[-1]:
+        st.markdown("---")
+        st.markdown(
+            theme.card(
+                "🏁 Kết thúc buổi học",
+                "Khi đã chấm xong các phần, bấm nút bên dưới để sang trang **tổng kết "
+                "cuối cùng** với sân khấu trao giải Nhất – Nhì – Ba cho ba người có điểm "
+                "cao nhất qua tất cả các vòng.",
+            ),
+            unsafe_allow_html=True,
+        )
+        c_end, c_note = st.columns([1, 2])
+        with c_end:
+            with st.container(key="ufm_finish_btn"):
+                if st.button(
+                    "🏁 Kết thúc & trao giải",
+                    key="go_podium_btn",
+                    type="primary",
+                    use_container_width=True,
+                ):
+                    _goto("podium", 0)
+        with c_note:
+            st.caption(
+                "Tổng điểm = cộng dồn điểm của người chơi qua tất cả các phần đã chơi."
+            )
+
 
 # ---------------------------------------------------------------------------
 # Điểm vào
@@ -941,6 +980,10 @@ def main() -> None:
     theme.inject_css()
     if st.query_params.get("view") == "play":
         audience.render_play_view()
+        return
+    # Màn mở đầu điện ảnh: chỉ vào app sau khi bấm "Chào mừng"
+    if not intro.already_seen():
+        intro.render()
         return
     presenter_view()
 
