@@ -300,14 +300,13 @@ def generate_code_for_language(
 
 def _split_code_and_guide(raw: str, lang: str) -> tuple[str, str]:
     """Tách phần code và phần hướng dẫn từ câu trả lời của AI."""
-    fence = "python" if lang == "python" else "r"
-    m = re.search(rf"```{fence}\s*\n(.*?)```", raw, re.DOTALL)
-    if m:
-        code = m.group(1).strip()
-    else:
+    code = _extract_code_block(raw, lang)
+    if not code:
         # Không có fenced block -> lấy từ sau tiêu đề CODE
         parts = re.split(r"##\s*(?:CODE|HƯỚNG DẪN|HUONG DAN)", raw, flags=re.IGNORECASE)
         code = parts[1].strip() if len(parts) > 1 else raw.strip()
+        code = re.sub(r"^```[a-zA-Z0-9+#-]*\s*\n?|```$", "", code).strip()
+    code = re.sub(r"^```[a-zA-Z0-9+#-]*\s*\n", "", code).strip()
 
     # Phần hướng dẫn: sau tiêu đề HƯỚNG DẪN
     guide = ""
@@ -320,8 +319,101 @@ def _split_code_and_guide(raw: str, lang: str) -> tuple[str, str]:
 
 
 def _extract_code_block(text: str, lang: str) -> str:
-    m = re.search(rf"```{lang}\s*\n(.*?)```", text, re.DOTALL)
+    """Lấy code trong fenced block (ưu tiên đúng ngôn ngữ, không có nhãn thì lấy block đầu)."""
+    m = re.search(rf"```{re.escape(lang)}\s*\n(.*?)```", text, re.DOTALL | re.IGNORECASE)
+    if not m:
+        m = re.search(r"```[a-zA-Z0-9_+#.-]*\s*\n(.*?)```", text, re.DOTALL)
     return m.group(1).strip() if m else ""
+
+
+def _api_reason(exc: Exception) -> str:
+    """Bóc lý do thật từ phản hồi lỗi của API (body thường có JSON)."""
+    import urllib.error
+
+    if not isinstance(exc, urllib.error.HTTPError):
+        return str(exc)
+    try:
+        body = exc.read().decode("utf-8", "replace")
+    except Exception:
+        return getattr(exc, "reason", str(exc))
+    try:
+        data = json.loads(body)
+    except (TypeError, json.JSONDecodeError):
+        return body.strip()[:300] or getattr(exc, "reason", str(exc))
+    err = data.get("error", data)
+    if isinstance(err, dict):
+        return str(err.get("message") or err.get("code") or err)[:300]
+    return str(err)[:300]
+
+
+def friendly_error(exc: Exception, cfg: dict | None = None) -> str:
+    """Giải thích lỗi gọi AI theo tiếng Việt, kèm cách sửa cụ thể."""
+    import urllib.error
+
+    cfg = cfg or {}
+    provider = "OpenRouter" if cfg.get("provider") == "openrouter" else "Google Gemini"
+    model = cfg.get("model", "")
+    reason = _api_reason(exc)
+    code = getattr(exc, "code", None)
+
+    if isinstance(exc, urllib.error.HTTPError) and code == 401:
+        extra = ""
+        if cfg.get("provider") == "openrouter":
+            extra = (
+                "\n\n• Key OpenRouter phải bắt đầu bằng `sk-or-v1-`."
+                "\n• Nếu bạn dùng key Gemini (bắt đầu bằng `AIza`) thì phải đặt vào "
+                "`GEMINI_API_KEY`, không đặt vào `OPENROUTER_API_KEY`."
+                "\n• Key có thể đã bị thu hồi/hết hạn → tạo key mới tại openrouter.ai/keys."
+            )
+        else:
+            extra = (
+                "\n\n• Key Gemini phải bắt đầu bằng `AIza`."
+                "\n• Nếu bạn dùng key OpenRouter thì phải đặt vào `OPENROUTER_API_KEY`."
+                "\n• Kiểm tra lại key trong Secrets của app trên Streamlit Cloud."
+            )
+        return (
+            f"❌ **{provider} từ chối key (401 Unauthorized)** — key AI không hợp lệ.\n\n"
+            f"* Nhà cung cấp: {provider}\n* Model: `{model}`\n"
+            f"* Lý do từ máy chủ: {reason}\n{extra}"
+        )
+
+    if isinstance(exc, urllib.error.HTTPError) and code == 402:
+        return (
+            f"❌ **{provider} (402 Payment Required)** — tài khoản đã hết hạn mức "
+            f"hoặc hết credit.\n\n* Model: `{model}`\n* Lý do: {reason}"
+        )
+
+    if isinstance(exc, urllib.error.HTTPError) and code == 404:
+        return (
+            f"❌ **Không tìm thấy model `{model}` trên {provider} (404).**\n\n"
+            f"* Lý do: {reason}\n"
+            f"• Kiểm tra đúng tên model, ví dụ OpenRouter: `openai/gpt-4o-mini`, "
+            f"Gemini: `gemini-2.0-flash`."
+        )
+
+    if isinstance(exc, urllib.error.HTTPError) and code == 429:
+        return (
+            f"⏳ **{provider} bị giới hạn tần suất (429).** Hãy chờ một lúc rồi thử lại.\n\n"
+            f"* Lý do: {reason}"
+        )
+
+    return f"❌ Lỗi khi gọi AI ({provider} · `{model}`): {reason}"
+
+
+def test_connection(cfg: dict) -> tuple[bool, str]:
+    """Gọi thử API với prompt ngắn để kiểm tra key/model có dùng được không."""
+    if not cfg.get("enabled"):
+        return False, "Chưa có API key trong Secrets."
+    try:
+        out = _call_llm(
+            cfg.get("provider", "gemini"),
+            cfg["api_key"],
+            "Chỉ trả lời đúng một chữ: OK",
+            cfg.get("model", DEFAULT_MODEL),
+        )
+        return True, f"Kết nối thành công. Phản hồi: {out.strip()[:60]}"
+    except Exception as e:  # noqa: BLE001
+        return False, friendly_error(e, cfg)
 
 
 def render_ai_code(
@@ -367,7 +459,7 @@ def render_ai_code(
                         st.session_state[f"{key_prefix}_code_{lang}"] = code
                         st.session_state[f"{key_prefix}_guide_{lang}"] = guide
                     except Exception as e:  # noqa: BLE001
-                        st.error(f"Lỗi khi gọi AI: {e}")
+                        st.error(friendly_error(e, cfg))
 
             code = st.session_state.get(f"{key_prefix}_code_{lang}")
             guide = st.session_state.get(f"{key_prefix}_guide_{lang}")

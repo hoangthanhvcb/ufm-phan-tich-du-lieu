@@ -115,6 +115,34 @@ def sidebar_leaderboard(room_id: str) -> None:
 # ---------------------------------------------------------------------------
 # Menu trái · Thanh top · Nút điều hướng nổi
 # ---------------------------------------------------------------------------
+def _render_ai_status(ai_cfg: dict) -> None:
+    """Chấm tròn trạng thái AI ở cuối sidebar + nút kiểm tra kết nối thật."""
+    provider = "OpenRouter" if ai_cfg.get("provider") == "openrouter" else "Google Gemini"
+    if not ai_cfg.get("enabled"):
+        theme.ai_status_dot(False, "AI chưa kết nối")
+        st.caption("Thiếu API key trong Secrets.")
+        return
+
+    state = st.session_state.get("ai_check")  # None | (bool, msg)
+    model = ai_cfg.get("model", "")
+    if state is None:
+        theme.ai_status_dot(False, f"AI · {model} (chưa kiểm tra)", pending=True)
+    elif state[0]:
+        theme.ai_status_dot(True, f"AI · {model}")
+    else:
+        theme.ai_status_dot(False, f"AI · {model} (lỗi)")
+
+    if st.button("🔌 Kiểm tra kết nối AI", key="ai_check_btn", use_container_width=True):
+        with st.spinner("Đang kiểm tra..."):
+            st.session_state["ai_check"] = ai.test_connection(ai_cfg)
+        st.rerun()
+
+    if state is not None and not state[0]:
+        st.error(state[1])
+    elif state is not None:
+        st.success(state[1])
+
+
 def render_sidebar_menu(current: str, stage: str, step_idx: int, room_id: str, ai_cfg: dict) -> None:
     with st.sidebar:
         # 1) Xếp hạng luôn nằm trên cùng
@@ -143,11 +171,7 @@ def render_sidebar_menu(current: str, stage: str, step_idx: int, room_id: str, a
 
         # 3) Mô hình AI nằm cuối cùng
         st.markdown('<div style="height:0.3rem"></div>', unsafe_allow_html=True)
-        connected = bool(ai_cfg.get("enabled"))
-        theme.ai_status_dot(
-            connected,
-            f"AI · {ai_cfg.get('model', '')}" if connected else "AI chưa kết nối",
-        )
+        _render_ai_status(ai_cfg)
 
 
 def render_top_bar(current: str) -> None:

@@ -321,6 +321,7 @@ section[data-testid="stSidebar"] button[data-testid="stBaseButton-primary"] {{
 }}
 .ufm-dot.on  {{ background: #22c55e; box-shadow: 0 0 8px #22c55e; }}
 .ufm-dot.off {{ background: #ef4444; box-shadow: 0 0 8px #ef4444; }}
+.ufm-dot.wait {{ background: #f59e0b; box-shadow: 0 0 8px #f59e0b; }}
 
 /* ------------------------------------------------------------------ */
 /* Thanh top: mục hiện tại đậm, hover hiện tooltip                     */
@@ -542,13 +543,18 @@ def top_bar(order: list[str], current: str | None, short_fn, title_fn) -> None:
     )
 
 
-def ai_status_dot(connected: bool, detail: str = "") -> None:
-    """Chấm tròn xanh/đỏ báo trạng thái kết nối AI (đặt ở cuối menu)."""
+def ai_status_dot(connected: bool, detail: str = "", pending: bool = False) -> None:
+    """Chấm tròn báo trạng thái kết nối AI: xanh = đã gọi thành công, đỏ = lỗi,
+    vàng = có key nhưng chưa kiểm tra."""
     label = detail or ("AI đã kết nối" if connected else "AI chưa kết nối")
-    dot = "on" if connected else "off"
-    icon = "🤖" if connected else "⚠️"
+    if pending:
+        cls, icon = "wait", "🟡"
+    elif connected:
+        cls, icon = "on", "🤖"
+    else:
+        cls, icon = "off", "🔴"
     st.markdown(
-        f'<div class="ufm-ai-status"><span class="ufm-dot {dot}"></span>'
+        f'<div class="ufm-ai-status"><span class="ufm-dot {cls}"></span>'
         f"<span>{icon} {label}</span></div>",
         unsafe_allow_html=True,
     )
