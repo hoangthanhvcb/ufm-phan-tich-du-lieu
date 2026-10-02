@@ -30,21 +30,17 @@ def last_model_used() -> str:
 def _default_api_key() -> str:
     """Lấy Gemini API key từ Streamlit secrets hoặc biến môi trường."""
     try:
-        import streamlit as st
-
-        return st.secrets.get("GEMINI_API_KEY") or os.environ.get("GEMINI_API_KEY") or ""
+        return (st.secrets.get("GEMINI_API_KEY") or os.environ.get("GEMINI_API_KEY") or "").strip()
     except Exception:
-        return os.environ.get("GEMINI_API_KEY") or ""
+        return (os.environ.get("GEMINI_API_KEY") or "").strip()
 
 
 def _default_openrouter_key() -> str:
     """Lấy OpenRouter API key từ Streamlit secrets hoặc biến môi trường."""
     try:
-        import streamlit as st
-
-        return st.secrets.get("OPENROUTER_API_KEY") or os.environ.get("OPENROUTER_API_KEY") or ""
+        return (st.secrets.get("OPENROUTER_API_KEY") or os.environ.get("OPENROUTER_API_KEY") or "").strip()
     except Exception:
-        return os.environ.get("OPENROUTER_API_KEY") or ""
+        return (os.environ.get("OPENROUTER_API_KEY") or "").strip()
 
 
 # ---------------------------------------------------------------------------
@@ -439,24 +435,50 @@ def friendly_error(exc: Exception, cfg: dict | None = None) -> str:
     return f"❌ Lỗi khi gọi AI ({provider} · `{model}`): {reason}"
 
 
+KEY_PREFIX_NAMES = [
+    ("sk-or-v1-", "OpenRouter"),
+    ("sk-or-", "OpenRouter"),
+    ("AIza", "Google Gemini"),
+    ("sk-ant-", "Anthropic"),
+    ("sk-proj-", "OpenAI"),
+    ("sk-", "OpenAI hoặc dịch vụ khác"),
+    ("ghp_", "GitHub"),
+    ("gsk_", "Groq"),
+    ("hf_", "Hugging Face"),
+    ("nvapi-", "NVIDIA"),
+    ("xai-", "xAI"),
+]
+
+
 def key_diagnostic(cfg: dict) -> str:
-    """Mô tả trạng thái key (chỉ chiều dài + lỗi dán) - KHÔNG hiển thị key."""
+    """Mô tả trạng thái key: độ dài + 6 ký tự đầu để nhận diện, KHÔNG hiện phần key còn lại."""
     key = cfg.get("api_key") or ""
     if not key:
         return "Chưa có API key"
+    k = key.strip()
     provider = cfg.get("provider", "gemini")
-    prefix = "sk-or-v1-" if provider == "openrouter" else "AIza"
+    expected = "sk-or-v1-" if provider == "openrouter" else "AIza"
+    want_name = "OpenRouter" if provider == "openrouter" else "Google Gemini"
+    found_name = next((n for p, n in KEY_PREFIX_NAMES if k.startswith(p)), "không nhận dạng")
+    head = k[:6] + "…" if len(k) > 6 else k
+
     notes: list[str] = []
-    if not key.startswith(prefix):
-        notes.append(f"⚠️ không bắt đầu bằng `{prefix}` (dán nhầm loại key?)")
-    if key != key.strip():
+    if not k.startswith(expected):
+        notes.append(
+            f"⚠️ cần key {want_name} (bắt đầu `{expected}`) nhưng giá trị trong Secrets "
+            f"trông giống: {found_name}"
+        )
+    if provider == "openrouter" and not k.startswith("sk-or-v1-"):
+        notes.append("→ hãy copy key ở openrouter.ai/keys và dán lại, đừng dán tên biến")
+    if key != k:
         notes.append("⚠️ thừa khoảng trắng đầu/cuối")
     if any(c in key for c in "\n\r"):
         notes.append("⚠️ thừa dòng")
     if '"' in key or "'" in key:
         notes.append("⚠️ thừa dấu nháy bên trong giá trị")
-    base = f"{len(key.strip())} ký tự"
-    return base if not notes else f"{base} · " + " ".join(notes)
+
+    base = f"{len(k)} ký tự · `{head}` · {found_name}"
+    return base if not notes else base + " · " + " ".join(notes)
 
 
 def test_connection(cfg: dict) -> tuple[bool, str]:
