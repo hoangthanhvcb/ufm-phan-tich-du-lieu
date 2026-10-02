@@ -157,7 +157,8 @@ def _live_section(room_id: str, device_id: str, player_name: str) -> None:
 
     if state["status"] == "done":
         _finish_section(room_id, section, section_label, device_id, player_name)
-        _show_score_summary(room_id, section_label)
+        _show_score_summary(room_id, device_id, section_label)
+        _show_review(room_id, section, section_label, device_id)
         _show_my_scoreboard(room_id, device_id)
         return
 
@@ -224,7 +225,7 @@ def _record_answer(
 ) -> None:
     """Chấm câu hiện tại. Điểm = đúng/sai + thưởng tốc độ theo thời gian còn lại
     (đo bằng đồng hồ chung của server, không tin đồng hồ của thiết bị).
-    Kết quả lưu ngầm, chỉ hiện khi kết thúc cả phần."""
+    Ghi ngay từng câu lên server để thoát ra quét lại QR vẫn xem lại được."""
     key = f"score_{room_id}_{section}"
     ck = f"correct_{room_id}_{section}"
     score = st.session_state.get(key, 0)
@@ -233,11 +234,36 @@ def _record_answer(
     remaining = float(state.get("remaining", 0.0))
 
     is_correct = bool(q) and answer == q.get("answer")
+    gained = 0
     if is_correct:
         correct += 1
-        score += quiz.points_for(remaining)
+        gained = quiz.points_for(remaining)
+        score += gained
     st.session_state[key] = score
     st.session_state[ck] = correct
+
+    picked_text = ""
+    if q and isinstance(answer, int) and 0 <= answer < len(q.get("options", [])):
+        picked_text = str(q["options"][answer])
+    st.session_state[f"pick_{room_id}_{section}_{state['q_index']}"] = picked_text
+
+    try:
+        room.save_responses(
+            room_id,
+            section,
+            device_id,
+            [
+                {
+                    "q_index": state["q_index"],
+                    "picked": picked_text,
+                    "correct": is_correct,
+                    "points": gained,
+                    "remaining": remaining,
+                }
+            ],
+        )
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _finish_section(
@@ -260,12 +286,27 @@ def _finish_section(
     correct = st.session_state.get(f"correct_{room_id}_{section}", 0)
     if st.session_state.get(done_key):
         return
-    try:
-        room.save_score(room_id, section, device_id, player_name, score, total)
-    except Exception:
-        pass
+
+    # Nếu phiên này không có điểm (vừa mới quét lại QR) thì lấy điểm đã lưu ở
+    # server, tuyệt đối KHÔNG ghi đè bằng 0 làm mất điểm của các vòng trước.
+    saved = _server_section(room_id, device_id).get(section)
+    if score <= 0 and saved and saved.get("score", 0) > 0:
+        score = int(saved["score"])
+    else:
+        try:
+            room.save_score(room_id, section, device_id, player_name, score, total)
+        except Exception:  # noqa: BLE001
+            pass
     st.session_state[done_key] = True
     _record_history(room_id, section, section_label, score, total, correct)
+
+
+def _server_section(room_id: str, device_id: str) -> dict:
+    """Điểm đã lưu trên server của người chơi (không phụ thuộc session)."""
+    try:
+        return room.section_scores(room_id, device_id)
+    except Exception:  # noqa: BLE001
+        return {}
 
 
 def _record_history(
@@ -287,43 +328,137 @@ def _record_history(
     st.session_state[hist_key] = items
 
 
-def _cumulative(room_id: str) -> int:
-    """Tổng điểm tích luỹ qua tất cả phần người chơi đã hoàn thành."""
+def _cumulative(room_id: str, device_id: str = "") -> int:
+    """Tổng điểm tích luỹ qua các phần, đọc từ SERVER.
+
+    Nhờ vậy người chơi thoát app/đóng trình duyệt rồi quét lại QR vẫn thấy
+    nguyên điểm các vòng đã chơi.
+    """
+    if device_id:
+        try:
+            total = room.section_scores(room_id, device_id).get("__total__")
+            if total is not None:
+                return int(total.get("score") or 0)
+        except Exception:  # noqa: BLE001
+            pass
     return sum(int(h["score"]) for h in st.session_state.get(f"hist_{room_id}", []))
 
 
-def _show_score_summary(room_id: str, section_label: str) -> None:
-    """Thẻ tổng kết: điểm của phần vừa chơi + tổng tích luỹ + các phần đã chơi."""
-    hist = st.session_state.get(f"hist_{room_id}", [])
+def _history(room_id: str, device_id: str) -> list[dict]:
+    """Các phần đã chơi: ưu tiên dữ liệu server, thiếu thì bổ sung từ session."""
+    items: dict[str, dict] = {
+        h["section"]: dict(h) for h in st.session_state.get(f"hist_{room_id}", [])
+    }
+    if device_id:
+        try:
+            saved = room.section_scores(room_id, device_id)
+        except Exception:  # noqa: BLE001
+            saved = {}
+        for section, data in saved.items():
+            if section == "__total__" or not data:
+                continue
+            score = int(data.get("score") or 0)
+            if score <= 0:
+                continue
+            items.setdefault(
+                section,
+                {
+                    "section": section,
+                    "label": _section_label(section),
+                    "score": score,
+                    "total": int(data.get("total") or quiz.MAX_QUESTIONS),
+                    "correct": None,
+                    "max": int(data.get("total") or quiz.MAX_QUESTIONS)
+                    * quiz.max_points_per_question(),
+                },
+            )
+    return sorted(
+        items.values(),
+        key=lambda x: ORDER.index(x["section"]) if x["section"] in ORDER else 99,
+    )
+
+
+def _show_score_summary(room_id: str, device_id: str, section_label: str) -> None:
+    """Thẻ tổng kết: điểm phần vừa chơi + tổng tích luỹ + các phần đã chơi."""
+    hist = _history(room_id, device_id)
     if not hist:
         st.info("⏳ Đã xong phần này, đang chờ phần tiếp theo...")
         return
-    last = hist[-1]
-    cumulative = _cumulative(room_id)
-    head = f"{'🏅' if cumulative > last['score'] else '📝'} Điểm phần **{last['label']}**"
+    current = next((h for h in hist if h["label"] == section_label), hist[-1])
+    cumulative = _cumulative(room_id, device_id)
+    sub = (
+        f'{current["correct"]}/{current["total"]} câu đúng · có thưởng tốc độ'
+        if current.get("correct") is not None
+        else "tổng điểm của bạn"
+    )
     st.markdown(
         f'<div class="ufm-score-card">'
-        f'<div class="ufm-score-head">{head}</div>'
-        f'<div class="ufm-score-main">{last["score"]}'
-        f'<span>/{last.get("max", last["total"] * quiz.max_points_per_question())}</span></div>'
-        f'<div class="ufm-score-sub">'
-        f'{last.get("correct", 0)}/{last["total"]} câu đúng · có thưởng tốc độ</div>',
+        f'<div class="ufm-score-head">🏆 Điểm phần <b>{section_label}</b></div>'
+        f'<div class="ufm-score-main">{current["score"]}'
+        f'<span>/{current.get("max", current["total"] * quiz.max_points_per_question())}</span></div>'
+        f'<div class="ufm-score-sub">{sub}</div>',
         unsafe_allow_html=True,
     )
-    if len(hist) > 1:
+    if cumulative > 0:
         st.markdown(
             f'<div class="ufm-score-total">🏅 Tổng tích luỹ: '
-            f'<b>{cumulative} điểm</b> qua {len(hist)} phần</div>',
+            f'<b>{cumulative} điểm</b> qua {len(hist)} phần đã chơi</div>',
             unsafe_allow_html=True,
         )
     rows = "".join(
-        f'<li><span>{h["label"]}</span>'
-        f'<b>{h["score"]} đ</b></li>'
-        for h in sorted(hist, key=lambda x: ORDER.index(x["section"]) if x["section"] in ORDER else 99)
+        f'<li><span>{h["label"]}</span><b>{h["score"]} đ</b></li>' for h in hist
     )
     st.markdown(
         f'<div class="ufm-score-list"><div class="ufm-score-list-t">Các phần đã chơi</div>'
         f"<ul>{rows}</ul></div>",
+        unsafe_allow_html=True,
+    )
+
+
+def _show_review(room_id: str, section: str, section_label: str, device_id: str) -> None:
+    """Xem lại đáp án của vòng vừa kết thúc: mình chọn gì, đáp án đúng là gì.
+
+    Đọc từ server nên vẫn còn sau khi thoát rồi quét lại QR.
+    """
+    try:
+        picks = room.get_responses(room_id, device_id, section)
+        state = quiz.view(room_id, section)
+        questions = state.get("questions") or []
+    except Exception:  # noqa: BLE001
+        return
+    if not picks or not questions:
+        return
+
+    items = []
+    for resp in sorted(picks, key=lambda x: x["q_index"]):
+        idx = resp["q_index"]
+        if idx >= len(questions):
+            continue
+        q = questions[idx]
+        opts = [str(o) for o in q.get("options", [])]
+        right = opts[q["answer"]] if "answer" in q and q["answer"] < len(opts) else "—"
+        picked = resp.get("picked") or "(không chọn)"
+        if resp["correct"]:
+            badge = '<span class="rv-ok">✔ Đúng</span>'
+        else:
+            badge = '<span class="rv-no">✘ Sai</span>'
+        items.append(
+            f'<div class="rv-item">'
+            f'<div class="rv-q">Câu {idx + 1}. {q["question"]}</div>'
+            f'<div class="rv-row"><span class="rv-tag rv-mine">Bạn chọn</span>'
+            f'<span class="rv-val">{picked}</span>'
+            f'<span class="rv-pts">+{resp["points"]}đ</span></div>'
+            f'<div class="rv-row"><span class="rv-tag rv-key">Đáp án đúng</span>'
+            f'<span class="rv-val rv-right">{right}</span>{badge}</div>'
+            f"</div>"
+        )
+    if not items:
+        return
+    st.markdown(
+        f'<div class="ufm-review">'
+        f'<div class="ufm-review-t">📝 Đáp án vòng <b>{section_label}</b></div>'
+        + "".join(items)
+        + "</div>",
         unsafe_allow_html=True,
     )
 
@@ -335,9 +470,9 @@ def _section_label(section: str) -> str:
 
 
 def _show_my_scoreboard(room_id: str, device_id: str) -> None:
-    """Bảng xếp hạng: chỉ hiện sau khi người chơi đã có điểm, tránh hiện
-    huy chương vàng/bạc ngay khi vừa quét mã tham gia."""
-    if _cumulative(room_id) <= 0:
+    """Bảng xếp hạng: chỉ hiện sau khi người chơi đã có điểm (đọc từ server),
+    nên thoát ra quét lại QR vẫn thấy đúng xếp hạng và điểm cũ."""
+    if _cumulative(room_id, device_id) <= 0:
         return
     board = room.scoreboard(room_id)
     if board:

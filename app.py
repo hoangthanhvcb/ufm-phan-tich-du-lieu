@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import os
 import tempfile
+from html import escape
 from pathlib import Path
 
 import streamlit as st
@@ -117,36 +118,46 @@ def sidebar_leaderboard(room_id: str) -> None:
 # ---------------------------------------------------------------------------
 # Menu trái · Thanh top · Nút điều hướng nổi
 # ---------------------------------------------------------------------------
+def _ai_cache_key(ai_cfg: dict) -> tuple:
+    """Định danh cấu hình AI, dùng để tự kiểm tra lại khi key/provider đổi."""
+    return (ai_cfg.get("provider", ""), ai_cfg.get("model", ""), bool(ai_cfg.get("enabled")))
+
+
 def _run_ai_check(ai_cfg: dict) -> None:
     """Gọi thật API kiểm tra rồi lưu kết quả (chỉ Công / Thất bại)."""
-    with st.spinner("Đang kiểm tra..."):
+    with st.spinner("Đang kiểm tra AI..."):
         st.session_state["ai_check"] = ai.test_connection(ai_cfg)
+    st.session_state["ai_check_key"] = _ai_cache_key(ai_cfg)
 
 
 def _render_ai_status(ai_cfg: dict) -> None:
-    """Dòng trạng thái AI ở đáy sidebar. BẤM VÀO để kiểm tra lại kết nối."""
-    if not ai_cfg.get("enabled"):
-        st.markdown(
-            '<div class="ufm-ai-status"><span class="ufm-dot off"></span>'
-            "<span>AI chưa kết nối</span></div>",
-            unsafe_allow_html=True,
-        )
-        return
+    """Dòng trạng thái AI ở đáy sidebar: tự kiểm tra khi có key, bấm để kiểm tra lại."""
+    enabled = bool(ai_cfg.get("enabled"))
+    model = ai_cfg.get("model", "")
+    cache_key = _ai_cache_key(ai_cfg)
+
+    # Có key mà chưa kiểm tra (hoặc vừa đổi key/provider) -> tự gọi API một lần.
+    if enabled and st.session_state.get("ai_check_key") != cache_key:
+        _run_ai_check(ai_cfg)
 
     state = st.session_state.get("ai_check")  # None | (bool, msg)
-    model = ai_cfg.get("model", "")
-    if state is None:
+    if not enabled:
+        cls, mark = "off", "Chưa có API key"
+    elif state is None:
         cls, mark = "wait", "Chưa kiểm tra"
     elif state[0]:
         cls, mark = "on", "Đã kết nối"
     else:
         cls, mark = "off", "Thất bại"
+    tip = escape(str(state[1])) if state else ""
+    label = f"AI · {model}" if enabled else "AI chưa kết nối"
 
     # Dòng trạng thái có chấm màu; nút trong suốt phủ kín để bấm là kiểm tra lại
     with st.container(key="ufm_ai_status_btn"):
         st.markdown(
-            f'<div class="ufm-ai-status"><span class="ufm-dot {cls}"></span>'
-            f"<span>AI · {model}</span></div>"
+            f'<div class="ufm-ai-status" title="{tip}">'
+            f'<span class="ufm-dot {cls}"></span>'
+            f"<span>{label}</span></div>"
             f'<div class="ufm-ai-note">{mark} · bấm để kiểm tra lại</div>',
             unsafe_allow_html=True,
         )
@@ -154,7 +165,7 @@ def _render_ai_status(ai_cfg: dict) -> None:
             _run_ai_check(ai_cfg)
             st.rerun()
 
-    if state is not None:
+    if state is not None and enabled:
         if state[0]:
             st.success("Kết nối thành công")
         else:

@@ -1,10 +1,12 @@
 """Lưu trữ dữ liệu trò chơi bằng Google Sheets (qua service account).
 
 Cấu trúc bảng tính (một spreadsheet, nhiều sheet):
-  - rooms:    room_id, current_section
-  - players:  room_id, device_id, name, joined_at
-  - sections: room_id, section, questions (JSON)
-  - answers:  room_id, section, device_id, name, score, total, answered_at
+  - rooms:     room_id, current_section
+  - players:   room_id, device_id, name, joined_at
+  - sections:  room_id, section, questions (JSON)
+  - answers:   room_id, section, device_id, name, score, total, answered_at
+  - responses: room_id, section, device_id, q_index, picked, correct, points,
+               remaining, answered_at  (từng câu, để xem lại được sau khi quét lại QR)
 """
 from __future__ import annotations
 
@@ -26,6 +28,10 @@ SHEET_HEADERS = {
     "sections": ["room_id", "section", "questions"],
     "answers": ["room_id", "section", "device_id", "name", "score", "total", "answered_at"],
     "quiz_state": ["room_id", "section", "questions", "q_index", "deadline", "active"],
+    "responses": [
+        "room_id", "section", "device_id", "q_index",
+        "picked", "correct", "points", "remaining", "answered_at",
+    ],
 }
 
 # Đường dẫn file service account (chạy local).
@@ -164,7 +170,7 @@ def _upsert(sheet_name: str, key_indices: list[int], new_row: list[str]) -> None
 # ---------------------------------------------------------------------------
 def reset_all() -> None:
     """Xóa toàn bộ dữ liệu trò chơi (giữ tiêu đề cột)."""
-    for sheet in ("rooms", "players", "sections", "answers", "quiz_state"):
+    for sheet in ("rooms", "players", "sections", "answers", "quiz_state", "responses"):
         _write_all(sheet, [])
 
 
@@ -214,6 +220,65 @@ def save_score(room: str, section: str, device_id: str, name: str, score: int, t
         [0, 1, 2],
         [room, section, device_id, name, str(score), str(total), datetime.now().isoformat(timespec="seconds")],
     )
+
+
+def save_responses(room: str, section: str, device_id: str, rows: list[dict]) -> None:
+    """Ghi tất cả câu trả lời của một vòng trong MỘT lần đọc/ghi duy nhất.
+
+    `rows`: [{q_index, picked, correct, points, remaining}, ...]
+    Khoá duy nhất: (room_id, section, device_id, q_index) -> nộp lại câu nào cũng
+    ghi đè đúng câu đó, không nhân bản điểm.
+    """
+    if not rows:
+        return
+    from datetime import datetime
+
+    now = datetime.now().isoformat(timespec="seconds")
+    data = _read_rows("responses")
+    index = {}
+    for i, r in enumerate(data):
+        if len(r) >= 4 and r[0] == room and r[1] == section and r[2] == device_id:
+            index[str(r[3])] = i
+    for item in rows:
+        key = str(int(item["q_index"]))
+        row = [
+            room, section, device_id, key,
+            str(item.get("picked", "")), str(item.get("correct", "")),
+            str(int(item.get("points") or 0)), f'{float(item.get("remaining") or 0):.1f}',
+            now,
+        ]
+        if key in index:
+            data[index[key]] = row
+        else:
+            index[key] = len(data)
+            data.append(row)
+    _write_all("responses", data)
+
+
+def get_responses(room: str, device_id: str, section: str | None = None) -> list[dict]:
+    """Đọc lại các câu đã trả lời của một người chơi (dùng để xem lại sau khi
+    thoát ra rồi quét lại QR - dữ liệu nằm trên server, không mất)."""
+    out = []
+    for r in _read_rows("responses"):
+        if len(r) < 7 or r[0] != room or r[2] != device_id:
+            continue
+        if section is not None and r[1] != section:
+            continue
+        try:
+            out.append(
+                {
+                    "section": r[1],
+                    "q_index": int(r[3]),
+                    "picked": r[4],
+                    "correct": r[5] == "1",
+                    "points": int(float(r[6] or 0)),
+                    "remaining": float(r[7] or 0) if len(r) > 7 else 0.0,
+                }
+            )
+        except (ValueError, IndexError):
+            continue
+    out.sort(key=lambda x: (x["section"], x["q_index"]))
+    return out
 
 
 def scoreboard(room: str) -> list[dict]:

@@ -582,6 +582,86 @@ PHONE_CSS = f"""
 .ufm-score-list li span {{ color: #3D4F63; }}
 .ufm-score-list li b {{ color: {BLUE}; white-space: nowrap; }}
 
+/* --- Xem lại đáp án sau mỗi vòng --- */
+.ufm-review {{
+  background: #FFFFFF;
+  border: 1.5px solid #DCE8F5;
+  border-radius: 14px;
+  padding: 0.8rem 0.9rem;
+  margin-bottom: 0.6rem;
+}}
+.ufm-review-t {{
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #7a8ca0;
+  margin-bottom: 0.5rem;
+}}
+.rv-item {{
+  border-left: 4px solid #CFE1F3;
+  padding: 0.45rem 0 0.5rem 0.6rem;
+  margin-bottom: 0.5rem;
+  background: linear-gradient(150deg, #FFFFFF, {LIGHT});
+  border-radius: 8px;
+}}
+.rv-item:last-child {{ margin-bottom: 0; }}
+.rv-q {{
+  font-size: 0.96rem;
+  font-weight: 700;
+  line-height: 1.4;
+  color: #10314F;
+  margin-bottom: 0.3rem;
+}}
+.rv-row {{ display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }}
+.rv-tag {{
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 0.12rem 0.4rem;
+  border-radius: 6px;
+  white-space: nowrap;
+}}
+.rv-mine {{ background: #EEF3F8; color: #5B6B7C; }}
+.rv-key {{ background: #E3F0FF; color: {BLUE_DARK}; }}
+.rv-val {{
+  flex: 1 1 6rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #3D4F63;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}}
+.rv-right {{ color: #0F7B4F; font-weight: 800; }}
+.rv-pts {{
+  font-size: 0.8rem;
+  font-weight: 800;
+  color: {BLUE};
+  background: #EAF3FF;
+  border-radius: 999px;
+  padding: 0.1rem 0.45rem;
+  white-space: nowrap;
+}}
+.rv-ok {{
+  font-size: 0.74rem;
+  font-weight: 800;
+  color: #0F7B4F;
+  background: #DCF5E8;
+  border-radius: 999px;
+  padding: 0.12rem 0.45rem;
+  white-space: nowrap;
+}}
+.rv-no {{
+  font-size: 0.74rem;
+  font-weight: 800;
+  color: #B02A2A;
+  background: #FCE3E3;
+  border-radius: 999px;
+  padding: 0.12rem 0.45rem;
+  white-space: nowrap;
+}}
+
 /* --- Đáp án dạng thẻ bấm được --- */
 .st-key-ufm_opts [data-testid="stRadio"] label {{
   border: 1.5px solid #DCE8F5;

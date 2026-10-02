@@ -1,4 +1,4 @@
-"""Kết nối AI (Google Gemini / OpenRouter) để tự sinh câu hỏi và gợi ý phân tích."""
+"""Kết nối AI (DeepSeek / OpenRouter / Google Gemini) để tự sinh câu hỏi và gợi ý."""
 from __future__ import annotations
 
 import json
@@ -10,6 +10,11 @@ import urllib.request
 import streamlit as st
 
 DEFAULT_MODEL = "gemini-2.0-flash"
+
+# DeepSeek (deepseek.com): deepseek-chat = V3.2, deepseek-reasoner = suy luận.
+DEEPSEEK_BASE_URL = "https://api.deepseek.com"
+DEFAULT_DEEPSEEK_MODEL = "deepseek-chat"
+DEEPSEEK_FALLBACK_MODELS = ["deepseek-reasoner"]
 
 # OpenRouter thường gỡ model free sau một thời gian, nên có danh sách dự phòng.
 DEFAULT_OPENROUTER_MODEL = "qwen/qwen3.8-27b:free"
@@ -35,6 +40,14 @@ def _default_api_key() -> str:
         return (os.environ.get("GEMINI_API_KEY") or "").strip()
 
 
+def _default_deepseek_key() -> str:
+    """Lấy DeepSeek API key từ Streamlit secrets hoặc biến môi trường."""
+    try:
+        return (st.secrets.get("DEEPSEEK_API_KEY") or os.environ.get("DEEPSEEK_API_KEY") or "").strip()
+    except Exception:
+        return (os.environ.get("DEEPSEEK_API_KEY") or "").strip()
+
+
 def _default_openrouter_key() -> str:
     """Lấy OpenRouter API key từ Streamlit secrets hoặc biến môi trường."""
     try:
@@ -49,23 +62,30 @@ def _default_openrouter_key() -> str:
 def get_config() -> dict:
     """Đọc cấu hình AI ngầm từ secrets/môi trường.
 
-    Ưu tiên OpenRouter nếu có key, ngược lại dùng Gemini.
+    Ưu tiên DeepSeek, sau đó OpenRouter, cuối cùng Gemini.
+    Đặt AI_PROVIDER = "deepseek" | "openrouter" | "gemini" để ép một nhà cung cấp.
     """
     gemini_key = _default_api_key()
     openrouter_key = _default_openrouter_key()
+    deepseek_key = _default_deepseek_key()
+    try:
+        forced = str(st.secrets.get("AI_PROVIDER") or os.environ.get("AI_PROVIDER") or "").strip().lower()
+    except Exception:
+        forced = os.environ.get("AI_PROVIDER", "").strip().lower()
 
-    if openrouter_key:
-        provider = "openrouter"
-        api_key = openrouter_key
-        model = os.environ.get("OPENROUTER_MODEL") or DEFAULT_OPENROUTER_MODEL
-    elif gemini_key:
-        provider = "gemini"
-        api_key = gemini_key
-        model = os.environ.get("GEMINI_MODEL") or DEFAULT_MODEL
+    keys = {"deepseek": deepseek_key, "openrouter": openrouter_key, "gemini": gemini_key}
+    if forced in keys and keys[forced]:
+        provider = forced
     else:
-        provider = "gemini"
-        api_key = ""
-        model = DEFAULT_MODEL
+        provider = next((name for name in ("deepseek", "openrouter", "gemini") if keys[name]), "gemini")
+
+    if provider == "deepseek":
+        model = os.environ.get("DEEPSEEK_MODEL") or DEFAULT_DEEPSEEK_MODEL
+    elif provider == "openrouter":
+        model = os.environ.get("OPENROUTER_MODEL") or DEFAULT_OPENROUTER_MODEL
+    else:
+        model = os.environ.get("GEMINI_MODEL") or DEFAULT_MODEL
+    api_key = keys[provider]
 
     return {
         "enabled": bool(api_key),
@@ -75,10 +95,15 @@ def get_config() -> dict:
     }
 
 
+# ---------------------------------------------------------------------------
 def render_status(cfg: dict) -> None:
     """Hiển thị trạng thái kết nối AI ngắn gọn (chỉ báo đã/chưa kết nối)."""
     if cfg.get("enabled"):
-        name = "OpenRouter" if cfg.get("provider") == "openrouter" else "Google Gemini"
+        name = {
+            "deepseek": "DeepSeek",
+            "openrouter": "OpenRouter",
+            "gemini": "Google Gemini",
+        }.get(cfg.get("provider"), "AI")
         st.success(f"🤖 AI đã kết nối · {name}")
     else:
         st.warning("🤖 AI chưa kết nối")
@@ -157,7 +182,52 @@ def _call_openrouter(api_key: str, prompt: str, model: str) -> str:
     raise last_exc if last_exc else RuntimeError("Không gọi được AI.")
 
 
+def _deepseek_once(api_key: str, prompt: str, model: str) -> str:
+    """Gọi DeepSeek API (tương thích OpenAI) và trả về văn bản trả lời."""
+    url = f"{DEEPSEEK_BASE_URL}/chat/completions"
+    body = {
+        "model": model,
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.7,
+        "max_tokens": 4096,
+    }
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(body).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}",
+        },
+    )
+    with urllib.request.urlopen(req, timeout=90) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+    try:
+        return data["choices"][0]["message"]["content"]
+    except (KeyError, IndexError):
+        raise RuntimeError("Phản hồi AI không đúng định dạng mong đợi.") from None
+
+
+def _call_deepseek(api_key: str, prompt: str, model: str) -> str:
+    """Gọi DeepSeek; nếu model lỗi (402 hết credit / 404) thì thử model dự phòng."""
+    global _LAST_MODEL_USED
+    candidates = [model] + [m for m in DEEPSEEK_FALLBACK_MODELS if m != model]
+    last_exc: Exception | None = None
+    for cand in candidates:
+        try:
+            text = _deepseek_once(api_key, prompt, cand)
+            _LAST_MODEL_USED = cand
+            return text
+        except urllib.error.HTTPError as exc:
+            last_exc = exc
+            if exc.code in (402, 404) and cand != candidates[-1]:
+                continue
+            raise
+    raise last_exc if last_exc else RuntimeError("Không gọi được AI.")
+
+
 def _call_llm(provider: str, api_key: str, prompt: str, model: str) -> str:
+    if provider == "deepseek":
+        return _call_deepseek(api_key, prompt, model)
     if provider == "openrouter":
         return _call_openrouter(api_key, prompt, model)
     return _call_gemini(api_key, prompt, model)
@@ -384,7 +454,11 @@ def friendly_error(exc: Exception, cfg: dict | None = None) -> str:
     import urllib.error
 
     cfg = cfg or {}
-    provider = "OpenRouter" if cfg.get("provider") == "openrouter" else "Google Gemini"
+    provider = {
+        "deepseek": "DeepSeek",
+        "openrouter": "OpenRouter",
+        "gemini": "Google Gemini",
+    }.get(cfg.get("provider"), "Google Gemini")
     model = cfg.get("model", "")
     reason = _api_reason(exc)
     code = getattr(exc, "code", None)
@@ -397,6 +471,12 @@ def friendly_error(exc: Exception, cfg: dict | None = None) -> str:
                 "\n• Nếu bạn dùng key Gemini (bắt đầu bằng `AIza`) thì phải đặt vào "
                 "`GEMINI_API_KEY`, không đặt vào `OPENROUTER_API_KEY`."
                 "\n• Key có thể đã bị thu hồi/hết hạn → tạo key mới tại openrouter.ai/keys."
+            )
+        elif cfg.get("provider") == "deepseek":
+            extra = (
+                "\n\n• Key DeepSeek phải bắt đầu bằng `sk-`."
+                "\n• Đặt vào secret `DEEPSEEK_API_KEY` (platform.deepseek.com/api_keys)."
+                "\n• 402 = hết credit, hãy nạp thêm tại platform.deepseek.com/top_up."
             )
         else:
             extra = (
