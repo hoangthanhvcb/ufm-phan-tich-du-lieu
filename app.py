@@ -37,7 +37,7 @@ from src import sections
 from src import theme
 
 # Đánh dấu phiên bản để kiểm tra web trên Cloud đã lên mã mới chưa.
-APP_VERSION = "2026-10-03 · 45 máy · sửa quota"
+APP_VERSION = "2026-10-03 · 45 máy · sửa quota + sidebar tự cập nhật"
 
 st.set_page_config(
     page_title="UFM · Phân tích dữ liệu định lượng",
@@ -123,6 +123,7 @@ def scoreboard_fragment(room_id: str) -> None:
 
 
 def sidebar_leaderboard(room_id: str) -> None:
+    """Xếp hạng + số người chơi trong thanh menu trái (tự làm mới 5 giây/lần)."""
     msg = room.storage_warning() or room.quota_warning()
     if msg:
         st.warning(msg, icon="⚠️")
@@ -200,8 +201,9 @@ def render_sidebar_menu(current: str, stage: str, step_idx: int, room_id: str, a
     """Sidebar chỉ còn: Xếp hạng · Đang xem · (đáy) Reset · Trạng thái AI.
     Điều hướng 6 phần nằm ở thanh trên cùng."""
     with st.sidebar:
-        # 1) Xếp hạng luôn nằm trên cùng
-        sidebar_leaderboard(room_id)
+        # 1) Xếp hạng luôn nằm trên cùng · tự làm mới để số người chơi
+        #    trong menu trái cập nhật ngay khi có máy quét QR mới.
+        st.fragment(sidebar_leaderboard, run_every=5)(room_id)
 
         # 2) Tiến trình hiện tại (không bấm được, chỉ để biết đang ở đâu)
         if current:
