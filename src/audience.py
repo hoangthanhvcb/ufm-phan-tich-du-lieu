@@ -137,8 +137,7 @@ def render_play_view() -> None:
     _live_section(room_id, device_id, player_name)
 
 
-@st.fragment(run_every=1)
-def _live_section(room_id: str, device_id: str, player_name: str) -> None:
+def _live_section_inner(room_id: str, device_id: str, player_name: str) -> None:
     """Khối tự làm mới mỗi giây: câu hỏi đang mở + đồng hồ đếm ngược + bảng điểm."""
     section = room.get_current_section(room_id)
 
@@ -213,6 +212,21 @@ def _live_section(room_id: str, device_id: str, player_name: str) -> None:
     ):
         _record_answer(room_id, section, state, answer, device_id, player_name)
         st.session_state[submitted_key] = True
+
+
+@st.fragment(run_every=1)
+def _live_section(room_id: str, device_id: str, player_name: str) -> None:
+    """Bọc lỗi cho khối chạy mỗi giây.
+
+    Khối này chạy 1 lần/giây trên tất cả máy học viên (tối đa 45 máy) và có
+    gọi ra Google Sheets. Nếu một lần gọi bị lỗi mạng hoặc vượt hạn mức mà
+    không bắt, Streamlit hiện "Error running app" ngay trên điện thoại học
+    viên. Ở đây chỉ hiện dòng nhỏ, vòng sau sẽ tự thử lại.
+    """
+    try:
+        _live_section_inner(room_id, device_id, player_name)
+    except Exception:  # noqa: BLE001
+        st.caption("↻ Đang kết nối lại, vui lòng chờ…")
 
 
 def _record_answer(

@@ -37,7 +37,7 @@ from src import sections
 from src import theme
 
 # Đánh dấu phiên bản để kiểm tra web trên Cloud đã lên mã mới chưa.
-APP_VERSION = "2026-10-03 · 45 máy · sửa quota + sidebar tự cập nhật"
+APP_VERSION = "2026-10-03 · 45 máy · chống sập"
 
 st.set_page_config(
     page_title="UFM · Phân tích dữ liệu định lượng",
@@ -113,8 +113,15 @@ def show_build_info() -> None:
 def scoreboard_fragment(room_id: str) -> None:
     """Bảng điểm tự làm mới (chỉ làm mới khối này)."""
     show_storage_warnings()
-    board = room.scoreboard(room_id)
-    players = room.player_count(room_id)
+    try:
+        board = room.scoreboard(room_id)
+        players = room.player_count(room_id)
+    except Exception:  # noqa: BLE001
+        # Khối này tự chạy lại mỗi 5s. Nếu một lần gọi Sheets bị lỗi mạng mà
+        # không bắt, Streamlit hiện "Error running app" và người trình bày mất
+        # màn hình. Chỉ hiện dòng nhỏ, vòng sau sẽ tự thử lại.
+        st.caption("↻ Đang tải bảng điểm...")
+        return
     st.markdown(f"### 🏆 Bảng điểm trực tiếp · {players} người chơi")
     if not board:
         st.info("Chưa có người chơi. Hãy mời quét mã QR.")
@@ -280,7 +287,13 @@ def render_float_nav(stage: str, step_idx: int) -> None:
 @st.fragment(run_every=1)
 def web_quiz_fragment(room_id: str, section_key: str, label: str) -> None:
     """Hiển thị câu hỏi đang mở và đồng hồ đếm ngược trên chính trang web."""
-    state = quiz.view(room_id, section_key)
+    try:
+        state = quiz.view(room_id, section_key)
+    except Exception:  # noqa: BLE001
+        # Chạy mỗi 1s trên cả 45 máy: lỗi mạng/quota nếu không bắt sẽ làm sập
+        # trang của học viên. Chỉ báo đang kết nối lại, vòng sau thử tiếp.
+        st.caption("↻ Đang kết nối lại câu hỏi...")
+        return
     if state["status"] != "running":
         return
 
