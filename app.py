@@ -37,7 +37,7 @@ from src import sections
 from src import theme
 
 # Đánh dấu phiên bản để kiểm tra web trên Cloud đã lên mã mới chưa.
-APP_VERSION = "2026-10-03 · 45 máy"
+APP_VERSION = "2026-10-03 · 45 máy · sửa quota"
 
 st.set_page_config(
     page_title="UFM · Phân tích dữ liệu định lượng",

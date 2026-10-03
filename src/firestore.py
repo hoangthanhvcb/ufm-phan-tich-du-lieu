@@ -150,6 +150,16 @@ def _to_doc(table: str, row: list[str]) -> dict:
 # ---------------------------------------------------------------------------
 # Ghi
 # ---------------------------------------------------------------------------
+def api_usage() -> dict:
+    """Firestore không áp dụng hạn mức 60/phút kiểu Sheets."""
+    return {"read": 0, "write": 0, "limit": 10**9}
+
+
+def flush_pending() -> None:
+    """Firestore ghi theo batch ngay nên không có hàng đợi chờ."""
+    return None
+
+
 def upsert_many(table: str, key_indices: list[int], new_rows: list[list[str]]) -> None:
     """Ghi nhiều dòng trong MỘT lô (Firestore batch, tối đa 500 thao tác/lô).
 

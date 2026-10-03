@@ -12,9 +12,94 @@ from __future__ import annotations
 
 import json
 import os
+import threading
+import time
 from pathlib import Path
 
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
+
+# ---------------------------------------------------------------------------
+# Bộ đệm trong RAM
+#
+# Hạn mức Sheets là 60 lượt/phút cho MỖI service account. Nếu mỗi lần ghi đều
+# phải "đọc toàn bộ sheet rồi ghi đè" (read-modify-write) thì lớp 45 máy sẽ tốn
+# hơn 150 lượt/phút và dính lỗi 429.
+#
+# Cách xử lý: giữ bản sao sheet trong RAM làm nguồn chính (mọi phiên Streamlit
+# đều chạy chung một tiến trình), sửa trên RAM rồi ghi xuống Sheets theo lô.
+# Nhờ vậy đọc không tốn lượt API nào, và mỗi lần ghi chỉ cần đúng 1 lượt ghi
+# mà không phải đọc trước.
+# ---------------------------------------------------------------------------
+_rows: dict[str, list[list[str]]] = {}
+_dirty: set[str] = set()
+_cache_lock = threading.RLock()
+_flush_timer: threading.Timer | None = None
+FLUSH_DELAY = float(os.environ.get("UFM_SHEETS_FLUSH_DELAY", "1.5"))
+
+# Đếm lượt API THẬT sự phát sinh, để cảnh báo hạn mức không báo nhầm.
+_api: dict[str, list[float]] = {"read": [], "write": []}
+API_LIMIT_PER_MIN = 60
+
+
+def _count_api(kind: str) -> None:
+    now = time.monotonic()
+    with _cache_lock:
+        for k in ("read", "write"):
+            bucket = _api[k]
+            while bucket and now - bucket[0] > 60:
+                bucket.pop(0)
+    if kind in _api:
+        _api[kind].append(now)
+
+
+def api_usage() -> dict:
+    now = time.monotonic()
+    with _cache_lock:
+        return {
+            "read": sum(1 for t in _api["read"] if now - t <= 60),
+            "write": sum(1 for t in _api["write"] if now - t <= 60),
+            "limit": API_LIMIT_PER_MIN,
+        }
+
+
+def flush_pending() -> None:
+    """Ghi những thay đổi còn trong RAM xuống Sheets ngay (1 lượt ghi/sheet).
+
+    Trả về số lượt ghi thất bại (0 là đã ghi hết). Người gọi quyết định có báo
+    lỗi hay không: lỗi mạng tạm thời KHÔNG có nghĩa Google Sheets hỏng.
+    """
+    global _flush_timer
+    with _cache_lock:
+        if _flush_timer is not None:
+            _flush_timer.cancel()
+            _flush_timer = None
+        pending = sorted(_dirty)
+        _dirty.clear()
+    failed = 0
+    for sheet in pending:
+        with _cache_lock:
+            rows = [list(r) for r in _rows.get(sheet, [])]
+        try:
+            _write_all(sheet, rows)
+        except Exception:  # noqa: BLE001
+            failed += 1
+            # Giữ nguyên dữ liệu trong RAM, đánh dấu bẩn để lần sau ghi lại.
+            with _cache_lock:
+                _dirty.add(sheet)
+    if _dirty:
+        _schedule_flush()
+    return failed
+
+
+def _schedule_flush() -> None:
+    """Gom các thay đổi rồi ghi sau một khoảng ngắn (1 request cho cả lô)."""
+    global _flush_timer
+    if _flush_timer is not None:
+        return
+    t = threading.Timer(FLUSH_DELAY, flush_pending)
+    t.daemon = True
+    _flush_timer = t
+    t.start()
 
 # ID bảng tính (điền qua biến môi trường hoặc Streamlit secrets).
 DEFAULT_SHEET_ID = os.environ.get(
@@ -114,8 +199,21 @@ def _service():
     return _build()
 
 
-def _execute(request, *, retries: int = 3):
+def _is_transient(msg: str) -> bool:
+    """Lỗi mạng tạm thời hay không (đáng thử lại) hay lỗi thật."""
+    needles = (
+        "SSL", "WRONG_VERSION_NUMBER", "Connection", "Timeout", "timed out",
+        "Temporary failure in name resolution", "Name or service not known",
+        "Max retries exceeded", "Network is unreachable", "Broken pipe",
+        "RemoteDisconnected", "502", "503", "504",
+    )
+    return any(n in msg for n in needles)
+
+
+def _execute(request, *, retries: int = 3, kind: str = ""):
     """Gọi API, tự thử lại khi gặp 429 (quota) hoặc lỗi 5xx tạm thời."""
+    if kind:
+        _count_api(kind)
     delay = 0.6
     for attempt in range(retries + 1):
         try:
@@ -137,6 +235,14 @@ def _execute(request, *, retries: int = 3):
                 time.sleep(delay)
                 delay *= 2
                 continue
+            # Lỗi mạng tạm thời (mất mạng, DNS, proxy, SSL reset): cũng nên thử
+            # lại vì chỉ vài giây sau là hết, và không phải lỗi vĩnh viễn.
+            if _is_transient(msg) and attempt < retries:
+                import time
+
+                time.sleep(delay)
+                delay *= 2
+                continue
             raise
 
 
@@ -151,34 +257,50 @@ def _ensure_sheet(sheet_name: str) -> None:
         return
     service = _service()
     sid = get_sheet_id()
-    meta = _execute(service.spreadsheets().get(spreadsheetId=sid))
+    meta = _execute(service.spreadsheets().get(spreadsheetId=sid), kind="read")
     titles = [s["properties"]["title"] for s in meta.get("sheets", [])]
     _known_sheets.update(titles)
     if sheet_name not in titles:
-        service.spreadsheets().batchUpdate(
-            spreadsheetId=sid,
-            body={"requests": [{"addSheet": {"properties": {"title": sheet_name}}}]},
-        ).execute()
-        service.spreadsheets().values().update(
-            spreadsheetId=sid,
-            range=f"{sheet_name}!A1",
-            valueInputOption="RAW",
-            body={"values": [SHEET_HEADERS[sheet_name]]},
-        ).execute()
+        _execute(
+            service.spreadsheets().batchUpdate(
+                spreadsheetId=sid,
+                body={"requests": [{"addSheet": {"properties": {"title": sheet_name}}}]},
+            ),
+            kind="write",
+        )
+        _execute(
+            service.spreadsheets().values().update(
+                spreadsheetId=sid,
+                range=f"{sheet_name}!A1",
+                valueInputOption="RAW",
+                body={"values": [SHEET_HEADERS[sheet_name]]},
+            ),
+            kind="write",
+        )
     _known_sheets.add(sheet_name)
 
 
 def _read_rows(sheet_name: str) -> list[list[str]]:
-    """Đọc các dòng dữ liệu (bỏ dòng tiêu đề)."""
+    """Các dòng dữ liệu của sheet, lấy từ RAM (chỉ gọi API lần đầu).
+
+    Nhờ có bộ đệm, đọc ở lớp học không tốn lượt API nào.
+    """
+    with _cache_lock:
+        if sheet_name in _rows:
+            return [list(r) for r in _rows[sheet_name]]
     _ensure_sheet(sheet_name)
     service = _service()
     result = _execute(
         service.spreadsheets()
         .values()
-        .get(spreadsheetId=get_sheet_id(), range=sheet_name)
+        .get(spreadsheetId=get_sheet_id(), range=sheet_name),
+        kind="read",
     )
     rows = result.get("values", [])
-    return rows[1:] if rows else []
+    data = [list(r) for r in (rows[1:] if rows else [])]
+    with _cache_lock:
+        _rows[sheet_name] = data
+    return [list(r) for r in data]
 
 
 def _write_all(sheet_name: str, rows: list[list[str]]) -> None:
@@ -199,7 +321,8 @@ def _write_all(sheet_name: str, rows: list[list[str]]) -> None:
             range=rng,
             valueInputOption="RAW",
             body={"values": body},
-        )
+        ),
+        kind="write",
     )
 
 
@@ -208,32 +331,44 @@ def _upsert(sheet_name: str, key_indices: list[int], new_row: list[str]) -> None
     upsert_many(sheet_name, key_indices, [new_row])
 
 
+def _mark_dirty(sheet_name: str) -> None:
+    """Đánh dấu sheet đã thay đổi trong RAM và hẹn ghi xuống Sheets."""
+    with _cache_lock:
+        _dirty.add(sheet_name)
+    _schedule_flush()
+
+
 def upsert_many(
     sheet_name: str, key_indices: list[int], new_rows: list[list[str]]
 ) -> None:
-    """Cập nhật NHIỀU dòng trong MỘT lần đọc + MỘT lần ghi.
+    """Cập nhật NHIỀU dòng, sửa trên RAM rồi ghi cả lô bằng 1 lượt ghi.
 
-    Rất quan trọng với lớp 30-40 học sinh: nếu ghi từng dòng riêng lẻ thì mỗi
-    người tốn 1 lần đọc + 1 lần ghi, vượt hạn mức 60/phút chỉ trong vài giây.
+    Không đọc lại sheet mỗi lần ghi (đó là nguyên nhân chính vượt hạn mức).
     """
     if not new_rows:
         return
+    with _cache_lock:
+        if sheet_name not in _rows:
+            pass  # nạp ở dưới qua _read_rows để chỉ tốn 1 lượt đọc
     rows = _read_rows(sheet_name)
     index: dict[tuple, int] = {}
-    max_key = max(key_indices)
-    for i, r in enumerate(rows):
-        if len(r) <= max_key:
-            continue
-        index[tuple(r[k] for k in key_indices)] = i
+    max_key = max(key_indices) if key_indices else -1
+    if key_indices:
+        for i, r in enumerate(rows):
+            if len(r) <= max_key:
+                continue
+            index[tuple(r[k] for k in key_indices)] = i
     for new_row in new_rows:
         norm = [str(v) for v in new_row]
-        k = tuple(norm[i] for i in key_indices)
+        k = tuple(norm[i] for i in key_indices) if key_indices else ()
         if k in index:
             rows[index[k]] = norm
         else:
             index[k] = len(rows)
             rows.append(norm)
-    _write_all(sheet_name, rows)
+    with _cache_lock:
+        _rows[sheet_name] = [list(r) for r in rows]
+    _mark_dirty(sheet_name)
 
 
 # ---------------------------------------------------------------------------
@@ -241,13 +376,18 @@ def upsert_many(
 # ---------------------------------------------------------------------------
 def reset_all() -> None:
     """Xóa toàn bộ dữ liệu trò chơi (giữ tiêu đề cột)."""
-    for sheet in ("rooms", "players", "sections", "answers", "quiz_state", "responses"):
+    sheets = ("rooms", "players", "sections", "answers", "quiz_state", "responses")
+    with _cache_lock:
+        _rows.clear()
+        _dirty.clear()
+    for sheet in sheets:
         _ensure_sheet(sheet)
         _execute(
             _service()
             .spreadsheets()
             .values()
-            .clear(spreadsheetId=get_sheet_id(), range=sheet)
+            .clear(spreadsheetId=get_sheet_id(), range=sheet),
+            kind="write",
         )
     _write_all("rooms", [])
 
@@ -331,7 +471,9 @@ def save_responses(room: str, section: str, device_id: str, rows: list[dict]) ->
         else:
             index[key] = len(data)
             data.append(row)
-    _write_all("responses", data)
+    with _cache_lock:
+        _rows["responses"] = [list(r) for r in data]
+    _mark_dirty("responses")
 
 
 def get_responses(room: str, device_id: str, section: str | None = None) -> list[dict]:

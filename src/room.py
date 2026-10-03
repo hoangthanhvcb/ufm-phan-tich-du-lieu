@@ -54,13 +54,25 @@ FLUSH_DELAY = float(os.environ.get("UFM_FLUSH_DELAY", "0.4"))
 
 
 def flush_now() -> None:
-    """Ghi nốt mọi thay đổi đang chờ gom (gọi khi kết thúc vòng chơi)."""
+    """Ghi nốt mọi thay đổi đang chờ gom, xuống cả RAM lẫn Sheets ngay."""
     with _batch_lock:
         due = {s: dict(d) for s, d in _pending.items() if d}
         _pending.clear()
         _flush_at.clear()
     for sheet, batch in due.items():
         _flush_batch(sheet, batch)
+    if _use_gsheets():
+        try:
+            _store().flush_pending()
+        except _store().QuotaExceeded:
+            # Vượt hạn mức: dữ liệu vẫn còn trong RAM, giữ nguyên hàng đợi.
+            global _quota_hit
+            _quota_hit = True
+        except Exception:
+            # Lỗi mạng tạm thời: KHÔNG coi là Sheets hỏng, giữ dữ liệu trong
+            # RAM và thử ghi lại ở lần sau. Trước đây chỗ này báo "hỏng" ngay
+            # khiến cả lớp rơi sang SQLite chỉ vì một lần mạng giật.
+            _mark_broken(10.0)
 
 
 def _batched_upsert(sheet: str, key_indices: list[int], rows: list[list[str]]) -> None:
@@ -90,8 +102,6 @@ def _flush_batch(sheet: str, batch: dict[tuple, list[str]]) -> None:
         return
     try:
         _store().upsert_many(sheet, _key_idx(sheet), list(batch.values()))
-        _count_api("read")
-        _count_api("write")
         _quota_hit = False
     except _store().QuotaExceeded:
         # Vượt hạn mức: giữ nguyên dữ liệu trong hàng đợi, thử lại ở lần gọi sau.
@@ -119,8 +129,7 @@ def _key_idx(sheet: str) -> list[int]:
     return _SHEET_KEYS.get(sheet, [0])
 
 # Số lần đọc/ghi Sheets trong 1 phút, để hiển thị cảnh báo cho người dùng.
-_api_calls: dict[str, list[float]] = {"read": [], "write": []}
-API_LIMIT_PER_MIN = 60
+API_LIMIT_PER_MIN = 60  # hạn mức Sheets mỗi service account
 
 # True khi vừa dính lỗi 429 (vượt hạn mức) -> dữ liệu đang chờ trong hàng đợi.
 _quota_hit = False
@@ -138,24 +147,22 @@ def quota_warning() -> str:
 
 
 def api_usage() -> dict:
-    """Thống kê mức dùng API Sheets trong 1 phút gần nhất."""
-    now = time.monotonic()
-    with _cache_lock:
-        out = {}
-        for k, calls in _api_calls.items():
-            calls[:] = [t for t in calls if now - t < 60]
-            out[k] = len(calls)
-        out["limit"] = API_LIMIT_PER_MIN
-        return out
+    """Mức dùng API thật trong 1 phút gần nhất.
 
-
-def _count_api(kind: str) -> None:
-    now = time.monotonic()
-    with _cache_lock:
-        calls = _api_calls[kind]
-        calls.append(now)
-        if len(calls) > 200:
-            del calls[:-120]
+    Lấy từ chính backend đếm lúc gọi API, nên phản ánh đúng hạn mức thật
+    (khác với đếm "số lần gọi hàm" — trước đây báo vượt hạn mứt oan).
+    """
+    if _use_gsheets():
+        try:
+            usage = _store().api_usage()
+            return {
+                "read": int(usage.get("read", 0)),
+                "write": int(usage.get("write", 0)),
+                "limit": int(usage.get("limit", API_LIMIT_PER_MIN)),
+            }
+        except Exception:  # noqa: BLE001
+            pass
+    return {"read": 0, "write": 0, "limit": API_LIMIT_PER_MIN}
 
 
 def _read_cached(kind: str, key: tuple, ttl: float):
@@ -322,7 +329,7 @@ def _resync_local_to_cloud() -> None:
             _store().upsert_many(table, _key_idx(table), data)
             total += len(data)
         if total:
-            _count_api("write")
+            flush_now()
     finally:
         con.close()
 
@@ -527,7 +534,6 @@ def get_player(room: str, device_id: str) -> str | None:
     if _use_gsheets():
         try:
             name = _store().get_player(room, device_id)
-            _count_api("read")
             return name or None
         except _store().QuotaExceeded:
             global _quota_hit
@@ -632,7 +638,6 @@ def _read_responses_uncached(room: str, device_id: str, section: str | None) -> 
     if _use_gsheets():
         try:
             rows = _store().get_responses(room, device_id, section)
-            _count_api("read")
             return rows
         except _store().QuotaExceeded:
             global _quota_hit
@@ -717,7 +722,6 @@ def _read_scoreboard_uncached(room: str) -> list[dict]:
     if _use_gsheets():
         try:
             rows = _store().scoreboard(room)
-            _count_api("read")
             return rows
         except _store().QuotaExceeded:
             global _quota_hit
@@ -754,7 +758,6 @@ def _read_player_count_uncached(room: str) -> int:
     if _use_gsheets():
         try:
             n = _store().player_count(room)
-            _count_api("read")
             return int(n)
         except _store().QuotaExceeded:
             global _quota_hit
@@ -871,7 +874,6 @@ def _get_quiz_state_uncached(room: str, section: str) -> dict | None:
     if _use_gsheets():
         try:
             state = _store().get_quiz_state(room, section)
-            _count_api("read")
             return state
         except _store().QuotaExceeded:
             raise
