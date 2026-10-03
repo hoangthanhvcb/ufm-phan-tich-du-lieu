@@ -36,6 +36,9 @@ from src import room
 from src import sections
 from src import theme
 
+# Đánh dấu phiên bản để kiểm tra web trên Cloud đã lên mã mới chưa.
+APP_VERSION = "2026-10-03 · 45 máy"
+
 st.set_page_config(
     page_title="UFM · Phân tích dữ liệu định lượng",
     page_icon="📊",
@@ -95,6 +98,16 @@ def show_storage_warnings() -> None:
     msg = room.storage_warning() or room.quota_warning()
     if msg:
         st.warning(msg, icon="⚠️")
+
+
+def show_build_info() -> None:
+    """Góc nhỏ cuối màn hình GV: đang lưu ở đâu và đang chạy mã nguồn nào.
+
+    Giúp kiểm tra nhanh web đã lên phiên bản mới chưa, không cần mở terminal.
+    """
+    st.caption(
+        f"💾 Lưu trữ: **{room.backend_name()}** · mã nguồn: `{APP_VERSION}`"
+    )
 
 
 def scoreboard_fragment(room_id: str) -> None:
@@ -890,6 +903,7 @@ def render_landing(room_id: str) -> None:
 
 
 def presenter_view() -> None:
+    show_build_info()
     room_id = get_room_id()
     ai_cfg = ai.get_config()
     stage = st.session_state.get("stage", "landing")
