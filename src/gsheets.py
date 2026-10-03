@@ -360,6 +360,25 @@ def get_responses(room: str, device_id: str, section: str | None = None) -> list
     return out
 
 
+def get_scores(room: str, device_id: str) -> list[dict]:
+    """Điểm đã ghi của một người chơi, tách theo từng phần."""
+    out = []
+    for r in _read_rows("answers"):
+        if len(r) < 6 or r[0] != room or r[2] != device_id:
+            continue
+        try:
+            out.append(
+                {
+                    "section": r[1],
+                    "score": int(float(r[4] or 0)),
+                    "total": int(float(r[5] or 0)),
+                }
+            )
+        except ValueError:
+            continue
+    return out
+
+
 def scoreboard(room: str) -> list[dict]:
     """Tổng điểm theo thiết bị (device_id), hiển thị tên HIỆN TẠI của người chơi.
 

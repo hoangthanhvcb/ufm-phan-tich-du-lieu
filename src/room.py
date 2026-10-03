@@ -20,6 +20,11 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+try:  # Firestore là tuỳ chọn: thiếu thư viện hoặc chưa bật API thì dùng Sheets
+    from src import firestore
+except Exception:  # noqa: BLE001  # pragma: no cover
+    firestore = None
+
 from src import gsheets
 
 DB_PATH = Path(
@@ -30,9 +35,15 @@ _gsheets_broken = False
 
 # TTL cache đọc (giây). Chọn để tổng số lần đọc/phút luôn < 60.
 TTL_QUIZ_STATE = float(os.environ.get("UFM_TTL_QUIZ_STATE", "2"))
-TTL_SCOREBOARD = float(os.environ.get("UFM_TTL_SCOREBOARD", "4"))
-TTL_PLAYERS = float(os.environ.get("UFM_TTL_PLAYERS", "8"))
+TTL_SCOREBOARD = float(os.environ.get("UFM_TTL_SCOREBOARD", "10"))
+TTL_PLAYERS = float(os.environ.get("UFM_TTL_PLAYERS", "15"))
 TTL_RESPONSES = float(os.environ.get("UFM_TTL_RESPONSES", "8"))
+
+# Trạng thái vòng hỏi chỉ sống ~30 giây và mọi máy đều chạy cùng một tiến trình,
+# nên giữ thêm trong RAM: vừa nhanh, vừa gần như không tốn lượt đọc Sheets nào
+# (đường đọc nóng nhất khi 45 điện thoại cùng theo dõi đồng hồ đếm ngược).
+_RAM_TTL = float(os.environ.get("UFM_RAM_TTL_QUIZ_STATE", "4"))
+_ram_quiz: dict[tuple, tuple[float, dict]] = {}
 
 _cache: dict[tuple, tuple[float, object]] = {}
 _cache_lock = threading.Lock()
@@ -80,11 +91,11 @@ def _flush_batch(sheet: str, batch: dict[tuple, list[str]]) -> None:
     if not batch:
         return
     try:
-        gsheets.upsert_many(sheet, _key_idx(sheet), list(batch.values()))
+        _store().upsert_many(sheet, _key_idx(sheet), list(batch.values()))
         _count_api("read")
         _count_api("write")
         _quota_hit = False
-    except gsheets.QuotaExceeded:
+    except _store().QuotaExceeded:
         # Vượt hạn mức: giữ nguyên dữ liệu trong hàng đợi, thử lại ở lần gọi sau.
         # KHÔNG chuyển sang SQLite vì sẽ chia đôi dữ liệu và sai bảng xếp hạng.
         _quota_hit = True
@@ -184,11 +195,41 @@ def invalidate(kind: str | None = None) -> None:
                 _cache.pop(k, None)
 
 
-def _use_gsheets() -> bool:
-    global _gsheets_broken
-    if _gsheets_broken:
+# Chon noi luu tren cloud: Firestore (giai han 50k luot doc/ngay) duoc uu tien,
+# neu chua bat duoc thi dung lai Google Sheets. Dat UFM_BACKEND de ep:
+#   auto (mac dinh) | firestore | sheets | sqlite
+BACKEND = os.environ.get("UFM_BACKEND", "auto").strip().lower()
+_cloud_broken = False
+
+
+def _store():
+    """Module lưu trữ đang dùng trên cloud."""
+    if BACKEND == "sheets":
+        return gsheets
+    if firestore is not None and (BACKEND == "firestore" or _firestore_ok()):
+        return firestore
+    return gsheets
+
+
+def _firestore_ok() -> bool:
+    try:
+        return bool(firestore.is_available())
+    except Exception:  # noqa: BLE001
         return False
-    return gsheets.is_available()
+
+
+def _use_gsheets() -> bool:
+    """Còn dùng nơi lưu trên cloud được không (Firestore hoặc Sheets)."""
+    global _cloud_broken
+    if _cloud_broken or BACKEND == "sqlite" or firestore is None and BACKEND == "firestore":
+        return False
+    return _store().is_available()
+
+
+def backend_name() -> str:
+    if not _use_gsheets():
+        return "SQLite tạm"
+    return "Firestore" if _store() is firestore else "Google Sheets"
 
 
 def _mark_broken() -> None:
@@ -198,13 +239,13 @@ def _mark_broken() -> None:
     chuyển sang SQLite sẽ chia đôi dữ liệu và làm sai bảng xếp hạng. Thay vào
     đó app hiển thị cảnh báo để người dùng biết ngay.
     """
-    global _gsheets_broken
-    _gsheets_broken = True
+    global _cloud_broken
+    _cloud_broken = True
 
 
 def storage_warning() -> str:
     """Cảnh báo ngắn gọn về tình trạng lưu trữ, hoặc chuỗi rỗng nếu bình thường."""
-    if not _gsheets_broken:
+    if not _cloud_broken:
         return ""
     return (
         "⚠️ Google Sheets tạm thời không phản hồi (có thể vượt hạn mức API). "
@@ -271,11 +312,13 @@ def reset_all() -> None:
     """Xóa toàn bộ dữ liệu trò chơi (người chơi, điểm, câu hỏi, phần hiện tại)."""
     if _use_gsheets():
         try:
-            gsheets.reset_all()
+            _store().reset_all()
             with _batch_lock:
                 _pending.clear()
                 _flush_at.clear()
             invalidate()
+            with _cache_lock:
+                _ram_quiz.clear()
             return
         except Exception:
             _mark_broken()
@@ -290,12 +333,14 @@ def reset_all() -> None:
     con.commit()
     con.close()
     invalidate()
+    with _cache_lock:
+        _ram_quiz.clear()
 
 
 def set_current_section(room: str, section: str) -> None:
     if _use_gsheets():
         try:
-            gsheets.upsert_many("rooms", [0], [[room, section]])
+            _store().upsert_many("rooms", [0], [[room, section]])
             invalidate("rooms")
             return
         except Exception:
@@ -314,7 +359,7 @@ def set_current_section(room: str, section: str) -> None:
 def get_current_section(room: str) -> str | None:
     if _use_gsheets():
         try:
-            return gsheets.get_current_section(room)
+            return _store().get_current_section(room)
         except Exception:
             _mark_broken()
     _init_db()
@@ -329,7 +374,7 @@ def get_current_section(room: str) -> str | None:
 def save_section_questions(room: str, section: str, questions: list[dict]) -> None:
     if _use_gsheets():
         try:
-            gsheets.upsert_many(
+            _store().upsert_many(
                 "sections", [0, 1],
                 [[room, section, json.dumps(questions, ensure_ascii=False)]],
             )
@@ -349,7 +394,7 @@ def save_section_questions(room: str, section: str, questions: list[dict]) -> No
 def get_section_questions(room: str, section: str) -> list[dict] | None:
     if _use_gsheets():
         try:
-            return gsheets.get_section_questions(room, section)
+            return _store().get_section_questions(room, section)
         except Exception:
             _mark_broken()
     _init_db()
@@ -376,7 +421,7 @@ def register_player(room: str, device_id: str, name: str) -> None:
             )
             invalidate("players")
             return
-        except gsheets.QuotaExceeded:
+        except _store().QuotaExceeded:
             global _quota_hit
             _quota_hit = True
             raise
@@ -396,13 +441,10 @@ def register_player(room: str, device_id: str, name: str) -> None:
 def get_player(room: str, device_id: str) -> str | None:
     if _use_gsheets():
         try:
-            for row in gsheets._read_rows("players"):
-                if len(row) >= 3 and row[0] == room and row[1] == device_id:
-                    _count_api("read")
-                    return row[2] or None
+            name = _store().get_player(room, device_id)
             _count_api("read")
-            return None
-        except gsheets.QuotaExceeded:
+            return name or None
+        except _store().QuotaExceeded:
             global _quota_hit
             _quota_hit = True
             raise
@@ -504,10 +546,10 @@ def get_responses(room: str, device_id: str, section: str | None = None) -> list
 def _read_responses_uncached(room: str, device_id: str, section: str | None) -> list[dict]:
     if _use_gsheets():
         try:
-            rows = gsheets.get_responses(room, device_id, section)
+            rows = _store().get_responses(room, device_id, section)
             _count_api("read")
             return rows
-        except gsheets.QuotaExceeded:
+        except _store().QuotaExceeded:
             global _quota_hit
             _quota_hit = True
             raise
@@ -559,15 +601,15 @@ def section_scores(room: str, device_id: str) -> dict[str, dict]:
         break
     if _use_gsheets():
         try:
-            for row in gsheets._read_rows("answers"):
-                if len(row) < 6 or row[0] != room or row[2] != device_id:
-                    continue
-                try:
-                    out[row[1]] = {"score": int(float(row[4] or 0)), "total": int(float(row[5] or 0))}
-                except ValueError:
-                    continue
+            for r in _store().get_scores(room, device_id):
+                out[r["section"]] = {"score": int(r["score"]), "total": int(r["total"])}
+            return out
+        except _store().QuotaExceeded:
+            global _quota_hit
+            _quota_hit = True
             return out
         except Exception:
+            _mark_broken()
             return out
     _init_db()
     con = _conn()
@@ -589,10 +631,10 @@ def scoreboard(room: str) -> list[dict]:
 def _read_scoreboard_uncached(room: str) -> list[dict]:
     if _use_gsheets():
         try:
-            rows = gsheets.scoreboard(room)
+            rows = _store().scoreboard(room)
             _count_api("read")
             return rows
-        except gsheets.QuotaExceeded:
+        except _store().QuotaExceeded:
             global _quota_hit
             _quota_hit = True
             raise
@@ -626,10 +668,10 @@ def player_count(room: str) -> int:
 def _read_player_count_uncached(room: str) -> int:
     if _use_gsheets():
         try:
-            n = gsheets.player_count(room)
+            n = _store().player_count(room)
             _count_api("read")
             return int(n)
-        except gsheets.QuotaExceeded:
+        except _store().QuotaExceeded:
             global _quota_hit
             _quota_hit = True
             raise
@@ -653,9 +695,19 @@ def set_quiz_state(
     deadline: float,
     active: bool,
 ) -> None:
+    # Ghi RAM ngay: các máy khác đọc sẽ có dữ liệu mà không tốn lượt Sheets.
+    _ram_put_quiz(
+        room, section,
+        {
+            "questions": questions,
+            "q_index": int(q_index),
+            "deadline": float(deadline),
+            "active": bool(active),
+        },
+    )
     if _use_gsheets():
         try:
-            gsheets.set_quiz_state(room, section, questions, q_index, deadline, active)
+            _store().set_quiz_state(room, section, questions, q_index, deadline, active)
             invalidate("quiz_state")
             return
         except Exception:
@@ -682,29 +734,61 @@ def set_quiz_state(
 def get_quiz_state(room: str, section: str) -> dict | None:
     """Trạng thái đếm ngược dùng chung cho web và điện thoại.
 
-    Đây là đường đọc nóng nhất: 30-40 điện thoại cùng hỏi mỗi giây. Nếu đọc
-    thẳng ra Sheets thì chỉ vài giây là vượt hạn mức 60 lần đọc/phút, nên phải
-    qua cache TTL (mặc định 2 giây): 40 máy cùng hỏi vẫn chỉ tốn ~30 lần/phút.
+    Đây là đường đọc nóng nhất. Thứ tự ưu tiên: RAM (tiến trình chung) → cache
+    TTL → Google Sheets. Với 45 máy cùng poll, phần lớn lượt đọc được trả từ
+    RAM nên không tốn quota.
     """
     ck = ("quiz_state", room, section)
     now = time.monotonic()
     with _cache_lock:
+        ram = _ram_quiz.get(ck)
+        if ram is not None and _ram_valid(ram, now):
+            return ram[1]
         hit = _cache.get(ck)
         if hit is not None and now - hit[0] < TTL_QUIZ_STATE:
             return hit[1]
     state = _get_quiz_state_uncached(room, section)
+    now = time.monotonic()
     with _cache_lock:
-        _cache[ck] = (time.monotonic(), state)
+        _cache[ck] = (now, state)
+        if state is not None:
+            _ram_quiz[ck] = (now, state)
     return state
+
+
+def _ram_valid(entry: tuple[float, dict], now: float) -> bool:
+    """Bản RAM còn dùng được không.
+
+    Khi câu hỏi đang chạy thì RAM là nguồn đúng nhất: mọi máy đều đọc cùng một
+    tiến trình và đồng hồ đếm ngược được tính từ `deadline` chung. Chỉ khi câu đã
+    hết giờ mới cần hỏi lại Sheets để lấy trạng thái mới do người trình bày ghi.
+    """
+    stamp, state = entry
+    if now - stamp < _RAM_TTL:
+        return True
+    try:
+        return bool(state.get("active")) and time.time() < float(state.get("deadline") or 0.0)
+    except (TypeError, ValueError):
+        return False
+
+
+def _ram_put_quiz(room: str, section: str, state: dict | None) -> None:
+    ck = ("quiz_state", room, section)
+    with _cache_lock:
+        if state is None:
+            _ram_quiz.pop(ck, None)
+        else:
+            _ram_quiz[ck] = (time.monotonic(), state)
+        _cache.pop(ck, None)
 
 
 def _get_quiz_state_uncached(room: str, section: str) -> dict | None:
     if _use_gsheets():
         try:
-            state = gsheets.get_quiz_state(room, section)
+            state = _store().get_quiz_state(room, section)
             _count_api("read")
             return state
-        except gsheets.QuotaExceeded:
+        except _store().QuotaExceeded:
             raise
         except Exception:
             _mark_broken()
@@ -730,9 +814,10 @@ def _get_quiz_state_uncached(room: str, section: str) -> dict | None:
 
 
 def clear_quiz_state(room: str, section: str) -> None:
+    _ram_put_quiz(room, section, None)
     if _use_gsheets():
         try:
-            gsheets.clear_quiz_state(room, section)
+            _store().clear_quiz_state(room, section)
             invalidate("quiz_state")
             return
         except Exception:
