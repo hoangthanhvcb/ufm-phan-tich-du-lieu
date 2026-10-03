@@ -31,8 +31,6 @@ DB_PATH = Path(
     os.environ.get("UFM_DB_PATH", str(Path(tempfile.gettempdir()) / "ufm_game.db"))
 )
 
-_gsheets_broken = False
-
 # TTL cache đọc (giây). Chọn để tổng số lần đọc/phút luôn < 60.
 TTL_QUIZ_STATE = float(os.environ.get("UFM_TTL_QUIZ_STATE", "2"))
 TTL_SCOREBOARD = float(os.environ.get("UFM_TTL_SCOREBOARD", "10"))
@@ -220,6 +218,7 @@ def _backend_pref() -> str:
 
 BACKEND = _backend_pref()
 _cloud_broken = False
+_broken_until = 0.0
 
 
 def _store():
@@ -241,7 +240,9 @@ def _firestore_ok() -> bool:
 def _use_gsheets() -> bool:
     """Còn dùng nơi lưu trên cloud được không (Firestore hoặc Sheets)."""
     global _cloud_broken
-    if _cloud_broken or BACKEND == "sqlite" or firestore is None and BACKEND == "firestore":
+    if BACKEND == "sqlite" or (firestore is None and BACKEND == "firestore"):
+        return False
+    if not _cloud_recovered():
         return False
     return _store().is_available()
 
@@ -252,25 +253,89 @@ def backend_name() -> str:
     return "Firestore" if _store() is firestore else "Google Sheets"
 
 
-def _mark_broken() -> None:
-    """Đánh dấu Sheets hỏng.
+# Sau một lỗi, ngừng dùng Sheets trong khoảng thời gian này rồi tự thử lại.
+# Lỗi mạng/quota thường chỉ kéo dài vài giây, không nên để app kẹt vĩnh viễn
+# ở trạng thái "lưu cục bộ" chỉ vì một lần gián đoạn.
+BROKEN_COOLDOWN = float(os.environ.get("UFM_BROKEN_COOLDOWN", "45"))
 
-    Cố ý KHÔNG tự chuyển im lặng: nếu đã ghi một phần sang Sheets rồi mới hỏng,
-    chuyển sang SQLite sẽ chia đôi dữ liệu và làm sai bảng xếp hạng. Thay vào
-    đó app hiển thị cảnh báo để người dùng biết ngay.
+
+def _mark_broken(seconds: float | None = None) -> None:
+    """Tạm ngừng dùng Sheets, sau đó tự thử lại.
+
+    Cố ý KHÔNG chuyển sang SQLite ngay: nếu đã ghi một phần lên Sheets rồi mới
+    hỏng, chuyển sang SQLite sẽ chia đôi dữ liệu và làm sai bảng xếp hạng. App
+    hiển thị cảnh báo để người dùng biết, và tự phục hồi khi hết thời gian chờ.
     """
-    global _cloud_broken
+    global _cloud_broken, _broken_until
     _cloud_broken = True
+    _broken_until = time.monotonic() + (BROKEN_COOLDOWN if seconds is None else seconds)
+
+
+def _cloud_recovered() -> bool:
+    """Đã qua thời gian chờ thì thử Sheets trở lại.
+
+    Nếu trong lúc hỏng đã có dữ liệu gì được ghi cục bộ thì đẩy ngược lại Sheets
+    trước, để không thành hai nguồn dữ liệu và bảng xếp hạng không bị lệch.
+    """
+    global _cloud_broken, _broken_until
+    if not _cloud_broken or time.monotonic() < _broken_until:
+        return not _cloud_broken
+    try:
+        if not _store().is_available():
+            return False
+        _resync_local_to_cloud()
+    except Exception:  # noqa: BLE001
+        # Chưa đồng bộ được thì giữ nguyên trạng thái hỏng, thử lại ở lần sau.
+        _broken_until = time.monotonic() + BROKEN_COOLDOWN
+        return False
+    _cloud_broken = False
+    with _cache_lock:
+        _cache.clear()
+    return True
+
+
+# Thứ tự đẩy lại: người chơi trước, rồi đáp án/điểm, cuối cùng mới câu hỏi và
+# trạng thái vòng hỏi (hai cái sau ghi đè theo khoá nên thứ tự không quan trọng).
+_RESYNC_TABLES = (
+    ("rooms", ["room_id", "current_section"]),
+    ("sections", ["room_id", "section", "questions"]),
+    ("players", ["room_id", "device_id", "name", "joined_at"]),
+    ("answers", ["room_id", "section", "device_id", "name", "score", "total", "answered_at"]),
+    ("responses", ["room_id", "section", "device_id", "q_index", "picked", "correct",
+                   "points", "remaining", "answered_at"]),
+    ("quiz_state", ["room_id", "section", "questions", "q_index", "deadline", "active"]),
+)
+
+
+def _resync_local_to_cloud() -> None:
+    """Đẩy dữ liệu đã ghi cục bộ lên Sheets sau khi Sheets phục hồi."""
+    if not DB_PATH.exists():
+        return
+    con = _conn()
+    try:
+        total = 0
+        for table, cols in _RESYNC_TABLES:
+            rows = con.execute(f"SELECT {', '.join(cols)} FROM {table}").fetchall()
+            if not rows:
+                continue
+            data = [[("" if r[c] is None else str(r[c])) for c in cols] for r in rows]
+            _store().upsert_many(table, _key_idx(table), data)
+            total += len(data)
+        if total:
+            _count_api("write")
+    finally:
+        con.close()
 
 
 def storage_warning() -> str:
     """Cảnh báo ngắn gọn về tình trạng lưu trữ, hoặc chuỗi rỗng nếu bình thường."""
     if not _cloud_broken:
         return ""
+    wait = max(1, int(_broken_until - time.monotonic()) + 1)
     return (
         "⚠️ Google Sheets tạm thời không phản hồi (có thể vượt hạn mức API). "
         "Dữ liệu vòng này đang lưu tạm cục bộ và **có thể mất khi khởi động lại app**. "
-        "Bấm nút Reset để chơi lại từ đầu."
+        f"App tự thử lại sau khoảng {wait} giây — nếu cảnh báo vẫn còn, bấm Reset để chơi lại."
     )
 
 
