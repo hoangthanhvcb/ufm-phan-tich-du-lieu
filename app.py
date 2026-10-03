@@ -90,8 +90,16 @@ def _goto(stage: str, idx: int) -> None:
     st.rerun()
 
 
+def show_storage_warnings() -> None:
+    """Cảnh báo lưu trữ: chỉ hiện khi thật sự có vấn đề, không làm phiền GV."""
+    msg = room.storage_warning() or room.quota_warning()
+    if msg:
+        st.warning(msg, icon="⚠️")
+
+
 def scoreboard_fragment(room_id: str) -> None:
     """Bảng điểm tự làm mới (chỉ làm mới khối này)."""
+    show_storage_warnings()
     board = room.scoreboard(room_id)
     players = room.player_count(room_id)
     st.markdown(f"### 🏆 Bảng điểm trực tiếp · {players} người chơi")
@@ -102,6 +110,9 @@ def scoreboard_fragment(room_id: str) -> None:
 
 
 def sidebar_leaderboard(room_id: str) -> None:
+    msg = room.storage_warning() or room.quota_warning()
+    if msg:
+        st.warning(msg, icon="⚠️")
     try:
         board = room.scoreboard(room_id)
         players = room.player_count(room_id)
@@ -284,6 +295,7 @@ def web_quiz_fragment(room_id: str, section_key: str, label: str) -> None:
 def render_live_quiz(section_key: str, label: str, questions: list[dict], room_id: str) -> None:
     """QR + nút Play; khi chạy thì câu hỏi hiện cả trên web lẫn điện thoại."""
     st.markdown("### 📱 QUIZZ")
+    show_storage_warnings()
     url = f"{get_origin()}?view=play&room={room_id}"
 
     left, right = st.columns([1, 2])
@@ -619,7 +631,13 @@ def render_reliability(df, summary: dict):
                 key="efa_rot",
             )
             rot = None if rotation == "None" else rotation
-            efa_res = efa.run_efa(df[efa_cols], n_factors, rotation=rot)
+            try:
+                efa_res = efa.run_efa(df[efa_cols], n_factors, rotation=rot)
+            except ValueError as exc:
+                st.error(f"Không chạy được EFA: {exc}")
+                efa_res = None
+            if efa_res is None:
+                return questions, result + "Không chạy được EFA: dữ liệu không phù hợp.\n"
             st.subheader("Phương sai giải thích")
             st.dataframe(efa_res["variance_table"], use_container_width=True)
             c1, c2 = st.columns(2)
@@ -958,9 +976,12 @@ def presenter_view() -> None:
         questions, result, _ready = SECTION_RENDERERS[current_key](df, summary)
 
     # ----- QUIZZ + Trợ lý AI: LUÔN hiện, không phụ thuộc tải dữ liệu -----
-    qkey = f"questions_{current_key}"
-    if questions and qkey not in st.session_state:
-        st.session_state[qkey] = game.build_questions(current_key, questions)
+    # Nguồn câu hỏi: ngân hàng trắc nghiệm chính thức trong game.py
+    # (3 câu/phần, khớp 6 nội dung). Không phụ thuộc dữ liệu nên chơi được
+    # ngay cả khi chưa tải file.
+    qkey = f"questions_{current_key}_exam"
+    if qkey not in st.session_state:
+        st.session_state[qkey] = game.questions_for_section(current_key)
     render_live_quiz(
         current_key, sections.title(current_key), st.session_state.get(qkey, []), room_id
     )

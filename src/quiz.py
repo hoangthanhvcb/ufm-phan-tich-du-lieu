@@ -5,6 +5,7 @@ nên mọi thiết bị đều thấy CÙNG một câu hỏi và cùng đồng h
 """
 from __future__ import annotations
 
+import threading
 import time
 
 from src import room
@@ -44,6 +45,11 @@ IDLE = {
     "answered": 0,
 }
 
+# Chống ghi trùng: khi hết giờ, cả lớp (30-40 máy) cùng nhận ra và cùng ghi
+# trạng thái mới. Chỉ máy đầu tiên được ghi, các máy khác dùng luôn kết quả.
+_advance_lock = threading.Lock()
+_advanced: dict[tuple, tuple[int, float]] = {}
+
 
 def start(
     room_id: str,
@@ -58,6 +64,8 @@ def start(
         return
     room.set_current_section(room_id, section)
     room.save_section_questions(room_id, section, qs)
+    with _advance_lock:
+        _advanced[(room_id, section)] = None
     room.set_quiz_state(
         room_id,
         section,
@@ -99,16 +107,30 @@ def view(
 
     # Hết giờ -> chuyển sang câu tiếp theo (hoặc kết thúc ván chơi)
     if active and now >= deadline:
-        idx += 1
-        if idx >= len(questions):
-            active = False
-            deadline = now
+        new_idx = idx + 1
+        if new_idx >= len(questions):
+            new_active = False
+            new_deadline = now
         else:
-            deadline = now + per_question
+            new_active = True
+            new_deadline = now + per_question
+
+        # Cả lớp cùng thấy hết giờ -> chỉ một máy ghi, tránh 40 lần ghi/phút.
+        key = (room_id, section)
+        with _advance_lock:
+            sig = (new_idx, round(new_deadline, 1))
+            last = _advanced.get(key)
+            should_write = last is None or last != sig
+            if should_write:
+                _advanced[key] = sig
         try:
-            room.set_quiz_state(room_id, section, questions, idx, deadline, active)
+            if should_write:
+                room.set_quiz_state(
+                    room_id, section, questions, new_idx, new_deadline, new_active
+                )
         except Exception:
             pass
+        idx, active, deadline = new_idx, new_active, new_deadline
 
     if not active:
         status = "done" if questions else "idle"

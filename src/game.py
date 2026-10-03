@@ -150,6 +150,220 @@ THEORY: dict[str, list[dict]] = {
 
 
 # ---------------------------------------------------------------------------
+# Ngân hàng câu hỏi trắc nghiệm chính thức
+# Nguồn: Cau_hoi_trac_nghiem_Xu_ly_va_Phan_tich_du_lieu_dinh_luong.docx
+# 18 câu · 6 nội dung · mỗi câu 4 lựa chọn A, B, C, D
+# Đây là nguồn câu hỏi DUY NHẤT dùng cho QUIZZ trên web.
+# ---------------------------------------------------------------------------
+EXAM_QUESTIONS: dict[str, list[dict]] = {
+    # --- PHẦN 1. TỔNG QUAN VỀ DỮ LIỆU ĐỊNH LƯỢNG ---
+    "overview": [
+        {
+            "question": "Dữ liệu định lượng là loại dữ liệu như thế nào?",
+            "options": [
+                "Chỉ mô tả bằng chữ",
+                "Được biểu diễn bằng số hoặc có thể chuyển thành giá trị số",
+                "Chỉ dùng để phỏng vấn",
+                "Không thể phân tích thống kê",
+            ],
+            "answer": 1,
+            "explanation": "Dữ liệu định lượng được biểu diễn bằng số hoặc quy đổi được về số để đo lường và phân tích thống kê.",
+        },
+        {
+            "question": "Có bao nhiêu cấp độ đo lường cơ bản?",
+            "options": ["2", "3", "4", "5"],
+            "answer": 2,
+            "explanation": "Có 4 cấp độ: định danh, thứ bậc, khoảng và tỷ lệ.",
+        },
+        {
+            "question": "Một câu hỏi Likert đơn lẻ từ 1–5 thường được xem là thang đo nào?",
+            "options": ["Định danh", "Thứ bậc", "Khoảng", "Tỷ lệ"],
+            "answer": 1,
+            "explanation": "Câu hỏi Likert đơn lẻ có thứ tự rõ ràng nên là thang đo thứ bậc (ordinal).",
+        },
+    ],
+    # --- PHẦN 2. THU THẬP, MÃ HÓA VÀ LÀM SẠCH DỮ LIỆU ---
+    "cleaning": [
+        {
+            "question": "Dữ liệu sơ cấp là dữ liệu:",
+            "options": [
+                "Do nhà nghiên cứu trực tiếp thu thập",
+                "Lấy từ báo cáo của tổ chức khác",
+                "Lấy từ niên giám thống kê",
+                "Lấy từ các nghiên cứu trước",
+            ],
+            "answer": 0,
+            "explanation": "Dữ liệu sơ cấp do chính nhà nghiên cứu thu thập; các loại còn lại là dữ liệu thứ cấp.",
+        },
+        {
+            "question": "Trong quá trình làm sạch dữ liệu, vấn đề nào sau đây cần được kiểm tra?",
+            "options": [
+                "Dữ liệu thiếu (Missing)",
+                "Bản ghi trùng lặp (Duplicate)",
+                "Giá trị ngoại lại (Outlier)",
+                "Cả A, B và C",
+            ],
+            "answer": 3,
+            "explanation": "Cả ba vấn đề — thiếu, trùng lặp và giá trị ngoại lại — đều phải được kiểm tra khi làm sạch.",
+        },
+        {
+            "question": "Mục đích chính của việc làm sạch dữ liệu là gì?",
+            "options": [
+                "Làm tăng số lượng mẫu",
+                "Làm dữ liệu đẹp hơn",
+                "Đảm bảo dữ liệu hợp lệ, nhất quán và sẵn sàng cho phân tích",
+                "Loại bỏ toàn bộ dữ liệu thiếu",
+            ],
+            "answer": 2,
+            "explanation": "Mục tiêu là dữ liệu hợp lệ, nhất quán và sẵn sàng phân tích — không phải làm đẹp hay loại bỏ mọi giá trị thiếu.",
+        },
+    ],
+    # --- PHẦN 3. THỐNG KÊ MÔ TẢ VÀ PHÂN TÍCH TƯƠNG QUAN ---
+    "descriptive": [
+        {
+            "question": "Mean dùng để biểu thị:",
+            "options": [
+                "Giá trị xuất hiện nhiều nhất",
+                "Giá trị nằm giữa",
+                "Giá trị trung bình",
+                "Giá trị lớn nhất",
+            ],
+            "answer": 2,
+            "explanation": "Mean là giá trị trung bình; xuất hiện nhiều nhất là Mode, nằm giữa là Median.",
+        },
+        {
+            "question": "Nếu độ lệch chuẩn (SD) càng nhỏ thì dữ liệu có xu hướng:",
+            "options": [
+                "Càng phân tán",
+                "Càng tập trung",
+                "Càng nhiều giá trị ngoại lại",
+                "Không thể xác định",
+            ],
+            "answer": 1,
+            "explanation": "SD nhỏ → các quan sát dồn quanh trung bình, dữ liệu càng tập trung.",
+        },
+        {
+            "question": "Hệ số tương quan Pearson (r) có giá trị trong khoảng nào?",
+            "options": ["0 đến 1", "-1 đến 0", "-1 đến +1", "1 đến 100"],
+            "answer": 2,
+            "explanation": "r chạy từ -1 (tương quan hoàn hảo đảo chiều) đến +1 (tương quan hoàn hảo cùng chiều).",
+        },
+    ],
+    # --- PHẦN 4. KIỂM ĐỊNH ĐỘ TIN CẬY THANG ĐO VÀ EFA ---
+    "reliability": [
+        {
+            "question": "Cronbach's Alpha được sử dụng chủ yếu để:",
+            "options": [
+                "Kiểm tra độ tin cậy của thang đo",
+                "Kiểm tra dữ liệu thiếu",
+                "Tính giá trị trung bình",
+                "Kiểm tra đa cộng tuyến",
+            ],
+            "answer": 0,
+            "explanation": "Cronbach's Alpha đo độ tin cậy nội bộ của một thang đo.",
+        },
+        {
+            "question": "Theo tài liệu, Corrected Item-Total Correlation nhỏ hơn mức nào thì cần xem xét loại biến?",
+            "options": ["0,1", "0,2", "0,3", "0,5"],
+            "answer": 2,
+            "explanation": "Dưới 0,3 biến đó có đóng góp thấp cho thang đo và cần được xem xét loại.",
+        },
+        {
+            "question": "Điều kiện nào phù hợp để thực hiện phân tích nhân tố EFA?",
+            "options": [
+                "KMO < 0,5 và Bartlett > 0,05",
+                "KMO ≥ 0,5 và Sig. Bartlett < 0,05",
+                "KMO = 0 và Bartlett = 1",
+                "KMO < 0,3 và Sig. Bartlett > 0,05",
+            ],
+            "answer": 1,
+            "explanation": "Cần KMO ≥ 0,5 (dữ liệu đủ tương quan) và Bartlett có ý nghĩa (Sig. < 0,05).",
+        },
+    ],
+    # --- PHẦN 5. THIẾT LẬP VÀ ƯỚC LƯỢNG MÔ HÌNH HỒI QUY ---
+    "ols_setup": [
+        {
+            "question": "Trong mô hình hồi quy, biến phụ thuộc thường được ký hiệu là:",
+            "options": ["X", "Y", "β", "α"],
+            "answer": 1,
+            "explanation": "Y là biến phụ thuộc; X là biến độc lập, β là hệ số hồi quy và α là hệ số chặn.",
+        },
+        {
+            "question": "Hệ số góc trong mô hình hồi quy cho biết:",
+            "options": [
+                "Số lượng mẫu nghiên cứu",
+                "Mức độ và xu hướng thay đổi của Y khi X thay đổi 1 đơn vị",
+                "Giá trị lớn nhất của Y",
+                "Số biến độc lập trong mô hình",
+            ],
+            "answer": 1,
+            "explanation": "Hệ số góc cho biết Y thay đổi bao nhiêu đơn vị (theo chiều và dấu) khi X tăng 1 đơn vị.",
+        },
+        {
+            "question": "Phương pháp OLS được sử dụng để:",
+            "options": [
+                "Thu thập dữ liệu",
+                "Mã hóa dữ liệu",
+                "Ước lượng các hệ số của mô hình hồi quy",
+                "Tính tần suất",
+            ],
+            "answer": 2,
+            "explanation": "OLS (bình phương nhỏ nhất) dùng để ước lượng các hệ số của mô hình hồi quy.",
+        },
+    ],
+    # --- PHẦN 6. ĐÁNH GIÁ MÔ HÌNH HỒI QUY ---
+    "ols_eval": [
+        {
+            "question": "R² trong mô hình hồi quy cho biết:",
+            "options": [
+                "Tỷ lệ biến thiên của Y được giải thích bởi các biến X",
+                "Số lượng biến độc lập",
+                "Số lượng mẫu",
+                "Giá trị trung bình của Y",
+            ],
+            "answer": 0,
+            "explanation": "R² là tỷ lệ phần biến thiên của Y được mô hình giải thích.",
+        },
+        {
+            "question": "Kiểm định F trong hồi quy dùng để:",
+            "options": [
+                "Kiểm tra dữ liệu thiếu",
+                "Kiểm tra độ tin cậy thang đo",
+                "Kiểm tra sự phù hợp của mô hình tổng thể",
+                "Tính trung bình mẫu",
+            ],
+            "answer": 2,
+            "explanation": "Kiểm định F kiểm tra giả thuyết các hệ số hồi quy đều bằng 0, tức mô hình có ý nghĩa tổng thể.",
+        },
+        {
+            "question": "VIF được sử dụng để kiểm tra:",
+            "options": [
+                "Tương quan Pearson",
+                "Độ tin cậy Cronbach's Alpha",
+                "Đa cộng tuyến giữa các biến độc lập",
+                "Dữ liệu thiếu",
+            ],
+            "answer": 2,
+            "explanation": "VIF (Variance Inflation Factor) đo mức độ đa cộng tuyến giữa các biến độc lập.",
+        },
+    ],
+}
+
+
+def questions_for_section(section: str) -> list[dict]:
+    """3 câu trắc nghiệm của phần, lấy từ ngân hàng câu hỏi chính thức."""
+    return [
+        {
+            "question": q["question"],
+            "options": list(q["options"]),
+            "answer": int(q["answer"]),
+            "explanation": q.get("explanation", ""),
+        }
+        for q in EXAM_QUESTIONS.get(section, [])
+    ]
+
+
+# ---------------------------------------------------------------------------
 # Bộ sinh câu hỏi từ dữ liệu thực tế
 # ---------------------------------------------------------------------------
 def _numeric_options(correct: float, decimals: int = 2) -> tuple[list, int]:

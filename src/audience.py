@@ -299,6 +299,11 @@ def _finish_section(
             pass
     st.session_state[done_key] = True
     _record_history(room_id, section, section_label, score, total, correct)
+    # Ghi nốt phần đang chờ gom trước khi hiển thị kết quả, để điểm không bị trễ.
+    try:
+        room.flush_now()
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _server_section(room_id: str, device_id: str) -> dict:

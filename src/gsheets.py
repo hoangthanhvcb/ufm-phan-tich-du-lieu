@@ -40,8 +40,25 @@ if not _SA_FILE.exists():
     _SA_FILE = Path(__file__).resolve().parent.parent.parent / "service_account.json"
 
 
+class QuotaExceeded(Exception):
+    """Vượt hạn mức API Sheets (HTTP 429).
+
+    Đây là lỗi TẠM THỜI. Không được coi như hỏng vĩnh viễn, nếu không app sẽ
+    âm thầm đổi sang SQLite và chia đôi dữ liệu giữa hai nơi.
+    """
+
+
 def _load_creds():
     """Nạp credentials theo thứ tự: Streamlit secrets → env → file local."""
+    cached = getattr(_load_creds, "_cache", "unset")
+    if cached != "unset":
+        return cached
+    creds = _load_creds_uncached()
+    _load_creds._cache = creds
+    return creds
+
+
+def _load_creds_uncached():
     try:
         import streamlit as st
 
@@ -97,12 +114,46 @@ def _service():
     return _build()
 
 
+def _execute(request, *, retries: int = 3):
+    """Gọi API, tự thử lại khi gặp 429 (quota) hoặc lỗi 5xx tạm thời."""
+    delay = 0.6
+    for attempt in range(retries + 1):
+        try:
+            return request.execute()
+        except Exception as exc:  # noqa: BLE001
+            status = getattr(getattr(exc, "resp", None), "status", None)
+            msg = str(exc)
+            if status == 429 or "Quota exceeded" in msg or "rateLimit" in msg:
+                if attempt < retries:
+                    import time
+
+                    time.sleep(delay)
+                    delay *= 2
+                    continue
+                raise QuotaExceeded(msg) from exc
+            if status is not None and 500 <= int(status) < 600 and attempt < retries:
+                import time
+
+                time.sleep(delay)
+                delay *= 2
+                continue
+            raise
+
+
+# Cache tiêu đề các sheet đã biết tồn tại, để không gọi spreadsheets().get()
+# ở MỌI lần đọc (mỗi lần đọc đều tốn thêm 1 request vào hạn mức 60/phút).
+_known_sheets: set[str] = set()
+
+
 def _ensure_sheet(sheet_name: str) -> None:
-    """Tạo sheet nếu chưa có và ghi dòng tiêu đề."""
+    """Tạo sheet nếu chưa có và ghi dòng tiêu đề (chỉ kiểm tra 1 lần/round)."""
+    if sheet_name in _known_sheets:
+        return
     service = _service()
     sid = get_sheet_id()
-    meta = service.spreadsheets().get(spreadsheetId=sid).execute()
+    meta = _execute(service.spreadsheets().get(spreadsheetId=sid))
     titles = [s["properties"]["title"] for s in meta.get("sheets", [])]
+    _known_sheets.update(titles)
     if sheet_name not in titles:
         service.spreadsheets().batchUpdate(
             spreadsheetId=sid,
@@ -114,54 +165,74 @@ def _ensure_sheet(sheet_name: str) -> None:
             valueInputOption="RAW",
             body={"values": [SHEET_HEADERS[sheet_name]]},
         ).execute()
+    _known_sheets.add(sheet_name)
 
 
 def _read_rows(sheet_name: str) -> list[list[str]]:
     """Đọc các dòng dữ liệu (bỏ dòng tiêu đề)."""
     _ensure_sheet(sheet_name)
     service = _service()
-    result = (
+    result = _execute(
         service.spreadsheets()
         .values()
         .get(spreadsheetId=get_sheet_id(), range=sheet_name)
-        .execute()
     )
     rows = result.get("values", [])
     return rows[1:] if rows else []
 
 
 def _write_all(sheet_name: str, rows: list[list[str]]) -> None:
-    """Ghi đè toàn bộ sheet (tiêu đề + dữ liệu)."""
+    """Ghi đè sheet (tiêu đề + dữ liệu) bằng MỘT lần ghi duy nhất.
+
+    Không dùng values().clear() vì nó tốn thêm 1 request ghi, và dữ liệu của
+    app chỉ tăng (trừ lúc reset, nơi clear được gọi riêng).
+    """
     _ensure_sheet(sheet_name)
     service = _service()
     headers = SHEET_HEADERS[sheet_name]
     body = [headers] + rows
-    service.spreadsheets().values().clear(
-        spreadsheetId=get_sheet_id(), range=sheet_name
-    ).execute()
-    service.spreadsheets().values().update(
-        spreadsheetId=get_sheet_id(),
-        range=f"{sheet_name}!A1",
-        valueInputOption="RAW",
-        body={"values": body},
-    ).execute()
+    ncols = max(len(r) for r in body)
+    rng = f"{sheet_name}!A1:{chr(ord('A') + ncols - 1)}{len(body)}"
+    _execute(
+        service.spreadsheets().values().update(
+            spreadsheetId=get_sheet_id(),
+            range=rng,
+            valueInputOption="RAW",
+            body={"values": body},
+        )
+    )
 
 
 def _upsert(sheet_name: str, key_indices: list[int], new_row: list[str]) -> None:
     """Chèn hoặc cập nhật một dòng theo các cột khóa."""
+    upsert_many(sheet_name, key_indices, [new_row])
+
+
+def upsert_many(
+    sheet_name: str, key_indices: list[int], new_rows: list[list[str]]
+) -> None:
+    """Cập nhật NHIỀU dòng trong MỘT lần đọc + MỘT lần ghi.
+
+    Rất quan trọng với lớp 30-40 học sinh: nếu ghi từng dòng riêng lẻ thì mỗi
+    người tốn 1 lần đọc + 1 lần ghi, vượt hạn mức 60/phút chỉ trong vài giây.
+    """
+    if not new_rows:
+        return
     rows = _read_rows(sheet_name)
-    target = None
+    index: dict[tuple, int] = {}
+    max_key = max(key_indices)
     for i, r in enumerate(rows):
-        if len(r) <= max(key_indices):
+        if len(r) <= max_key:
             continue
-        if all(r[k] == str(new_row[k]) for k in key_indices):
-            target = i
-            break
-    norm = [str(v) for v in new_row]
-    if target is not None:
-        rows[target] = norm
-    else:
-        rows.append(norm)
+        index[tuple(r[k] for k in key_indices)] = i
+    for new_row in new_rows:
+        norm = [str(v) for v in new_row]
+        k = tuple(norm[i] for i in key_indices)
+        if k in index:
+            rows[index[k]] = norm
+        else:
+            index[k] = len(rows)
+            rows.append(norm)
     _write_all(sheet_name, rows)
 
 
@@ -171,7 +242,14 @@ def _upsert(sheet_name: str, key_indices: list[int], new_row: list[str]) -> None
 def reset_all() -> None:
     """Xóa toàn bộ dữ liệu trò chơi (giữ tiêu đề cột)."""
     for sheet in ("rooms", "players", "sections", "answers", "quiz_state", "responses"):
-        _write_all(sheet, [])
+        _ensure_sheet(sheet)
+        _execute(
+            _service()
+            .spreadsheets()
+            .values()
+            .clear(spreadsheetId=get_sheet_id(), range=sheet)
+        )
+    _write_all("rooms", [])
 
 
 def set_current_section(room: str, section: str) -> None:
@@ -243,7 +321,8 @@ def save_responses(room: str, section: str, device_id: str, rows: list[dict]) ->
         key = str(int(item["q_index"]))
         row = [
             room, section, device_id, key,
-            str(item.get("picked", "")), str(item.get("correct", "")),
+            str(item.get("picked", "")),
+            "1" if item.get("correct") else "0",
             str(int(item.get("points") or 0)), f'{float(item.get("remaining") or 0):.1f}',
             now,
         ]
@@ -270,7 +349,7 @@ def get_responses(room: str, device_id: str, section: str | None = None) -> list
                     "section": r[1],
                     "q_index": int(r[3]),
                     "picked": r[4],
-                    "correct": r[5] == "1",
+                    "correct": str(r[5]).strip().lower() in ("1", "true", "yes"),
                     "points": int(float(r[6] or 0)),
                     "remaining": float(r[7] or 0) if len(r) > 7 else 0.0,
                 }
