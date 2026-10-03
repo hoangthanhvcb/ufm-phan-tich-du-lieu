@@ -198,7 +198,27 @@ def invalidate(kind: str | None = None) -> None:
 # Chon noi luu tren cloud: Firestore (giai han 50k luot doc/ngay) duoc uu tien,
 # neu chua bat duoc thi dung lai Google Sheets. Dat UFM_BACKEND de ep:
 #   auto (mac dinh) | firestore | sheets | sqlite
-BACKEND = os.environ.get("UFM_BACKEND", "auto").strip().lower()
+# Chon noi luu tren cloud: Firestore (giai han 50k luot doc/ngay) duoc uu tien,
+# neu chua bat duoc thi dung lai Google Sheets. Dat UFM_BACKEND de ep:
+#   auto (mac dinh) | firestore | sheets | sqlite
+# Doc tu bien moi truong truoc, neu khong co thi doc tu .streamlit/secrets.toml
+# (de doi backend tren Streamlit Cloud ma khong can dong lenh).
+def _backend_pref() -> str:
+    val = (os.environ.get("UFM_BACKEND") or "").strip().lower()
+    if val:
+        return val
+    try:
+        import streamlit as _st
+
+        val = str(_st.secrets.get("UFM_BACKEND") or "").strip().lower()
+        if val:
+            return val
+    except Exception:  # noqa: BLE001
+        pass
+    return "auto"
+
+
+BACKEND = _backend_pref()
 _cloud_broken = False
 
 
