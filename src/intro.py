@@ -136,14 +136,6 @@ INTRO_CSS = """
   clip-path: polygon(7px 0, 100% 0, 100% calc(100% - 7px), calc(100% - 7px) 100%, 0 100%, 0 7px);
 }
 .ufm-hud .rec { color: #FF6B6B; border-color: #7A2B2B; animation: ufmBlink 1.4s steps(1) infinite; }
-.ufm-foot {
-  text-align: center;
-  color: #5E86AC;
-  font-size: 0.72rem;
-  letter-spacing: 0.2em;
-  margin: 1.6rem 0 0.2rem 0;
-  animation: ufmIn 1s 0.5s both;
-}
 /* nút Chào mừng: khung góc cạnh + ánh sáng quét + viền phát sáng */
 .st-key-ufm_intro_btn { margin-top: 1.4rem; }
 .st-key-ufm_intro_btn button {
@@ -225,7 +217,6 @@ def render() -> None:
               <span>QUIZZ READY</span>
             </div>
           </div>
-          <div class="ufm-foot">TRƯỜNG ĐẠI HỌC KHOA HỌC TỰ NHIÊN · KHOA TOÁN</div>
         </div>
         """,
         unsafe_allow_html=True,
